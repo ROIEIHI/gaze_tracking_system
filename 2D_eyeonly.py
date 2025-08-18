@@ -21,8 +21,8 @@ class EyeTracker:
         self.SMOOTHING_FACTOR = 0.2
         
         # Boundary box for user positioning (normalized coordinates)
-        self.BOUNDARY_LEFT = 0.3
-        self.BOUNDARY_RIGHT = 0.7
+        self.BOUNDARY_LEFT = 0.375
+        self.BOUNDARY_RIGHT = 0.625
         self.BOUNDARY_TOP = 0.3
         self.BOUNDARY_BOTTOM = 0.7
         
@@ -55,9 +55,9 @@ class EyeTracker:
         
         # Define margins
         edge_margin = 20  # Small margin from absolute edges
-        grid_margin_percent = 0.1  # 10% margin for middle grid
-        
-        # Calculate grid boundaries (10% from edges)
+        grid_margin_percent = 0.2  # 20% margin for middle grid
+
+        # Calculate grid boundaries (20% from edges)
         grid_left = int(screen_w * grid_margin_percent)
         grid_right = int(screen_w * (1 - grid_margin_percent))
         grid_top = int(screen_h * grid_margin_percent)
@@ -81,27 +81,61 @@ class EyeTracker:
             (screen_w - edge_margin, screen_h // 2)               # Right edge center
         ]
         
-        # 3. Nine-point grid in the middle (10% from edges)
+        # 3. Enhanced 13-point grid in the middle (20% from edges)
         grid_points = []
+        
+        # Original 3x3 grid points
+        original_grid = []
         for row in range(3):
             for col in range(3):
                 x = grid_left + col * (grid_right - grid_left) // 2
                 y = grid_top + row * (grid_bottom - grid_top) // 2
+                original_grid.append((x, y))
                 grid_points.append((x, y))
+        
+        # Add intermediate points between specified targets
+        # Grid layout indices: 0=TL, 1=TC, 2=TR, 3=ML, 4=MC, 5=MR, 6=BL, 7=BC, 8=BR
+        # Targets 9-17 correspond to indices 0-8
+        
+        # Between target 11 and 13 (Grid TR and Grid MC) - indices 2 and 4
+        tr_x, tr_y = original_grid[2]  # Top-Right
+        mc_x, mc_y = original_grid[4]  # Middle-Center
+        mid_11_13 = ((tr_x + mc_x) // 2, (tr_y + mc_y) // 2)
+        grid_points.append(mid_11_13)
+        
+        # Between target 9 and 13 (Grid TL and Grid MC) - indices 0 and 4
+        tl_x, tl_y = original_grid[0]  # Top-Left
+        mc_x, mc_y = original_grid[4]  # Middle-Center
+        mid_9_13 = ((tl_x + mc_x) // 2, (tl_y + mc_y) // 2)
+        grid_points.append(mid_9_13)
+        
+        # Between target 15 and 13 (Grid BL and Grid MC) - indices 6 and 4
+        bl_x, bl_y = original_grid[6]  # Bottom-Left
+        mc_x, mc_y = original_grid[4]  # Middle-Center
+        mid_15_13 = ((bl_x + mc_x) // 2, (bl_y + mc_y) // 2)
+        grid_points.append(mid_15_13)
+        
+        # Between target 17 and 13 (Grid BR and Grid MC) - indices 8 and 4
+        br_x, br_y = original_grid[8]  # Bottom-Right
+        mc_x, mc_y = original_grid[4]  # Middle-Center
+        mid_17_13 = ((br_x + mc_x) // 2, (br_y + mc_y) // 2)
+        grid_points.append(mid_17_13)
         
         # Combine all calibration targets
         self.calibration_targets = corners + edges + grid_points
         
-        # Label targets for better tracking during calibration
+        # Label targets for better tracking during calibration (now 21 total targets)
         self.target_labels = (
             ["Corner TL", "Corner TR", "Corner BL", "Corner BR"] +
             ["Edge Top", "Edge Bottom", "Edge Left", "Edge Right"] +
-            ["Grid TL", "Grid TC", "Grid TR", "Grid ML", "Grid MC", "Grid MR", "Grid BL", "Grid BC", "Grid BR"]
+            ["Grid TL", "Grid TC", "Grid TR", "Grid ML", "Grid MC", "Grid MR", "Grid BL", "Grid BC", "Grid BR"] +
+            ["Mid TR-MC", "Mid TL-MC", "Mid BL-MC", "Mid BR-MC"]  # New intermediate targets
         )
         
         # Boundary hysteresis state tracking
         self.is_currently_in_boundary = False
         self.boundary_exit_timestamp = None
+        self.boundary_entry_timestamp = None  # Track when user enters boundary
         
     def calculate_face_bounding_box(self, landmarks):
         """Calculate the actual bounding box of the user's face"""
@@ -323,7 +357,7 @@ class EyeTracker:
                 face_box['top'] >= self.BOUNDARY_TOP and 
                 face_box['bottom'] <= self.BOUNDARY_BOTTOM)
     
-    def draw_boundary_box(self, image, is_positioned_correctly):
+    def draw_boundary_box(self, image, is_positioned_correctly, can_proceed=True):
         """Draw the positioning boundary box (absolute boundary)"""
         h, w = image.shape[:2]
         
@@ -332,20 +366,35 @@ class EyeTracker:
         top = int(self.BOUNDARY_TOP * h)
         bottom = int(self.BOUNDARY_BOTTOM * h)
         
-        color = (0, 255, 0) if is_positioned_correctly else (0, 0, 255)  # Green if positioned, red if not
+        # Color logic: Green only if positioned AND can proceed
+        if is_positioned_correctly and can_proceed:
+            color = (0, 255, 0)  # Green - ready to proceed
+        elif is_positioned_correctly and not can_proceed:
+            color = (0, 255, 255)  # Yellow - positioned but waiting
+        else:
+            color = (0, 0, 255)  # Red - not positioned correctly
+        
         thickness = 3
         
         cv2.rectangle(image, (left, top), (right, bottom), color, thickness)
         
         # Add text instructions
         if not is_positioned_correctly:
-            text = "Position your YELLOW face box inside the GREEN boundary"
+            text = "Position your YELLOW face box inside the boundary"
+        elif is_positioned_correctly and not can_proceed:
+            text = "Hold position steady for 1 second..."
         else:
-            text = "Perfect! Your face is properly positioned. Press ENTER to continue"
+            text = "Perfect! Press ENTER to continue"
         cv2.putText(image, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
         
-        # Add boundary label
-        cv2.putText(image, "Target Area", (left, top - 10), 
+        # Add boundary label with status
+        if is_positioned_correctly and can_proceed:
+            label = "Ready!"
+        elif is_positioned_correctly:
+            label = "Hold Position"
+        else:
+            label = "Target Area"
+        cv2.putText(image, label, (left, top - 10), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     
     def draw_face_bounding_box(self, image, landmarks, color=(0, 255, 255)):
@@ -455,7 +504,7 @@ class EyeTracker:
         cv2.putText(window, "Edges (5-8)", (90, legend_y + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
         cv2.circle(window, (70, legend_y + 60), 10, colors['grid'], -1)
-        cv2.putText(window, "Grid (9-17)", (90, legend_y + 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        cv2.putText(window, "Grid (9-21)", (90, legend_y + 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
         
         cv2.putText(window, "Press any key to continue...", (50, self.WINDOW_HEIGHT - 50), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
@@ -613,6 +662,7 @@ class EyeTracker:
         # Reset hysteresis state for positioning phase
         self.is_currently_in_boundary = False
         self.boundary_exit_timestamp = None
+        self.boundary_entry_timestamp = None
         
         while True:
             ret, frame = cap.read()
@@ -632,39 +682,62 @@ class EyeTracker:
             current_time = time.time()
             
             if is_geometrically_in:
-                # User is back in boundary - reset hysteresis
+                # User is back in boundary - reset exit timestamp and start entry tracking
+                if self.boundary_exit_timestamp is not None:
+                    # User just re-entered - start entry grace period
+                    self.boundary_entry_timestamp = current_time
+                elif self.boundary_entry_timestamp is None:
+                    # User has been in boundary but we haven't started tracking entry time
+                    self.boundary_entry_timestamp = current_time
+                
                 self.is_currently_in_boundary = True
                 self.boundary_exit_timestamp = None
             else:
-                # User is out of boundary
+                # User is out of boundary - reset entry timestamp
+                self.boundary_entry_timestamp = None
                 if self.boundary_exit_timestamp is None:
                     # First frame out of boundary - start grace period
                     self.boundary_exit_timestamp = current_time
-                elif current_time - self.boundary_exit_timestamp >= 1.0:
+                elif current_time - self.boundary_exit_timestamp >= 0.25:
                     # Grace period expired - user is officially out
                     self.is_currently_in_boundary = False
                 # If still within grace period, maintain previous state
             
-            # Determine final positioning status for UI
+            # Determine final positioning status for UI (exit hysteresis)
             if is_geometrically_in:
                 is_positioned_for_ui = True
-            elif self.boundary_exit_timestamp is not None and current_time - self.boundary_exit_timestamp < 1.0:
+            elif self.boundary_exit_timestamp is not None and current_time - self.boundary_exit_timestamp < 0.25:
                 is_positioned_for_ui = True  # Still in grace period
             else:
                 is_positioned_for_ui = False
             
+            # Determine if user can proceed (entry grace period)
+            can_proceed = False
+            entry_time_remaining = 0
+            if is_positioned_for_ui and self.boundary_entry_timestamp is not None:
+                time_in_boundary = current_time - self.boundary_entry_timestamp
+                if time_in_boundary >= 1.0:
+                    can_proceed = True
+                else:
+                    entry_time_remaining = 1.0 - time_in_boundary
+            
             # Draw boundary box (changes color based on positioning status)
-            self.draw_boundary_box(frame_resized, is_positioned_for_ui)
+            self.draw_boundary_box(frame_resized, is_positioned_for_ui, can_proceed)
             
             # Draw face bounding box for visualization (always yellow)
             self.draw_face_bounding_box(frame_resized, results, color=(0, 255, 255))
             
-            # Add timing information if in grace period
+            # Add timing information if in exit grace period
             if not is_geometrically_in and self.boundary_exit_timestamp is not None:
-                time_remaining = 1.0 - (current_time - self.boundary_exit_timestamp)
+                time_remaining = 0.25 - (current_time - self.boundary_exit_timestamp)
                 if time_remaining > 0:
-                    cv2.putText(frame_resized, f"Grace period: {time_remaining:.1f}s", 
+                    cv2.putText(frame_resized, f"Exit grace: {time_remaining:.2f}s", 
                                (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+            
+            # Add timing information for entry grace period
+            if is_positioned_for_ui and not can_proceed and entry_time_remaining > 0:
+                cv2.putText(frame_resized, f"Stay in position: {entry_time_remaining:.1f}s", 
+                           (50, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
             
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
@@ -677,7 +750,7 @@ class EyeTracker:
             cv2.imshow('User Positioning', frame_resized)
             
             key = cv2.waitKey(1) & 0xFF
-            if key == 13 and is_positioned_for_ui:  # Enter key
+            if key == 13 and can_proceed:  # Enter key - only allow if user has been in boundary for 1 second
                 break
             elif key == 27:  # Escape key
                 cv2.destroyAllWindows()
@@ -739,7 +812,7 @@ class EyeTracker:
         """Main calibration process"""
         total_targets = len(self.calibration_targets)
         print(f"--- Starting Calibration ({total_targets} targets) ---")
-        print("Sequence: 4 Corners → 4 Edges → 9 Grid Points")
+        print("Sequence: 4 Corners → 4 Edges → 13 Grid Points (9 main + 4 intermediate)")
         
         for i, (target_x, target_y) in enumerate(self.calibration_targets):
             target_label = self.target_labels[i] if i < len(self.target_labels) else f"Target {i+1}"
