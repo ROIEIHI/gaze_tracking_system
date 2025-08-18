@@ -46,72 +46,260 @@ class EyeTracker:
         self.FACE_DETECTION_THRESHOLD = 0.85
         self.session_paused = False
         
-        # Calibration targets (3x3 grid)
-        self.calibration_targets = [
-            (135, 90),   # Top-left
-            (540, 90),   # Top-center
-            (945, 90),   # Top-right
-            (135, 360),  # Middle-left
-            (540, 360),  # Middle-center
-            (945, 360),  # Middle-right
-            (135, 630),  # Bottom-left
-            (540, 630),  # Bottom-center
-            (945, 630)   # Bottom-right
+        # Calibration targets - Comprehensive 17-point calibration
+        # 4 corners + 4 edges + 9 middle grid (10% from edges)
+        
+        # Screen dimensions for calculations
+        screen_w = self.WINDOW_WIDTH
+        screen_h = self.WINDOW_HEIGHT
+        
+        # Define margins
+        edge_margin = 20  # Small margin from absolute edges
+        grid_margin_percent = 0.1  # 10% margin for middle grid
+        
+        # Calculate grid boundaries (10% from edges)
+        grid_left = int(screen_w * grid_margin_percent)
+        grid_right = int(screen_w * (1 - grid_margin_percent))
+        grid_top = int(screen_h * grid_margin_percent)
+        grid_bottom = int(screen_h * (1 - grid_margin_percent))
+        
+        self.calibration_targets = []
+        
+        # 1. Four corners of the screen
+        corners = [
+            (edge_margin, edge_margin),                           # Top-left corner
+            (screen_w - edge_margin, edge_margin),                # Top-right corner
+            (edge_margin, screen_h - edge_margin),                # Bottom-left corner
+            (screen_w - edge_margin, screen_h - edge_margin)      # Bottom-right corner
         ]
         
+        # 2. Four edges (middle of each edge)
+        edges = [
+            (screen_w // 2, edge_margin),                         # Top edge center
+            (screen_w // 2, screen_h - edge_margin),              # Bottom edge center
+            (edge_margin, screen_h // 2),                         # Left edge center
+            (screen_w - edge_margin, screen_h // 2)               # Right edge center
+        ]
+        
+        # 3. Nine-point grid in the middle (10% from edges)
+        grid_points = []
+        for row in range(3):
+            for col in range(3):
+                x = grid_left + col * (grid_right - grid_left) // 2
+                y = grid_top + row * (grid_bottom - grid_top) // 2
+                grid_points.append((x, y))
+        
+        # Combine all calibration targets
+        self.calibration_targets = corners + edges + grid_points
+        
+        # Label targets for better tracking during calibration
+        self.target_labels = (
+            ["Corner TL", "Corner TR", "Corner BL", "Corner BR"] +
+            ["Edge Top", "Edge Bottom", "Edge Left", "Edge Right"] +
+            ["Grid TL", "Grid TC", "Grid TR", "Grid ML", "Grid MC", "Grid MR", "Grid BL", "Grid BC", "Grid BR"]
+        )
+        
     def extract_iris_features(self, image, landmarks):
-        """Extract normalized iris position features"""
+        """Extract normalized iris position features relative to face bounding box and head pose"""
         if not landmarks.multi_face_landmarks:
             return None
             
         face_landmarks = landmarks.multi_face_landmarks[0]
         h, w = image.shape[:2]
         
-        # Get key facial landmarks
-        # Left eye corners and iris
-        left_eye_left = face_landmarks.landmark[33]   # Left eye left corner
-        left_eye_right = face_landmarks.landmark[133] # Left eye right corner
-        left_iris = face_landmarks.landmark[468]      # Left iris center
+        # Get face bounding box using key facial landmarks
+        # Use a comprehensive set of face boundary landmarks
+        face_boundary_landmarks = [
+            10, 151, 9, 175,    # Top of forehead/face
+            234, 454, 132, 361,  # Left and right face boundaries  
+            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323  # Bottom face boundary
+        ]
         
-        # Right eye corners and iris
-        right_eye_left = face_landmarks.landmark[362]  # Right eye left corner
-        right_eye_right = face_landmarks.landmark[263] # Right eye right corner
-        right_iris = face_landmarks.landmark[473]      # Right iris center
+        # Extract all face boundary coordinates
+        face_x_coords = []
+        face_y_coords = []
         
-        # Normalize iris positions relative to eye corners
-        # Left eye normalization
-        left_eye_width = abs(left_eye_right.x - left_eye_left.x)
-        left_eye_height = max(abs(face_landmarks.landmark[145].y - face_landmarks.landmark[159].y), 0.01)
+        for idx in face_boundary_landmarks:
+            if idx < len(face_landmarks.landmark):
+                landmark = face_landmarks.landmark[idx]
+                face_x_coords.append(landmark.x)
+                face_y_coords.append(landmark.y)
         
-        norm_x_L = (left_iris.x - left_eye_left.x) / max(left_eye_width, 0.01)
-        norm_y_L = (left_iris.y - left_eye_left.y) / left_eye_height
+        # Calculate face bounding box
+        face_left = min(face_x_coords)
+        face_right = max(face_x_coords)
+        face_top = min(face_y_coords)
+        face_bottom = max(face_y_coords)
         
-        # Right eye normalization
-        right_eye_width = abs(right_eye_right.x - right_eye_left.x)
-        right_eye_height = max(abs(face_landmarks.landmark[374].y - face_landmarks.landmark[386].y), 0.01)
+        # Add margin to create a more stable bounding box (10% margin)
+        face_width = face_right - face_left
+        face_height = face_bottom - face_top
+        margin_x = face_width * 0.1
+        margin_y = face_height * 0.1
         
-        norm_x_R = (right_iris.x - right_eye_left.x) / max(right_eye_width, 0.01)
-        norm_y_R = (right_iris.y - right_eye_left.y) / right_eye_height
+        face_left_bounded = max(0, face_left - margin_x)
+        face_right_bounded = min(1, face_right + margin_x)
+        face_top_bounded = max(0, face_top - margin_y)
+        face_bottom_bounded = min(1, face_bottom + margin_y)
         
-        return [norm_x_L, norm_y_L, norm_x_R, norm_y_R]
+        # Update face dimensions with margin
+        face_width_bounded = face_right_bounded - face_left_bounded
+        face_height_bounded = face_bottom_bounded - face_top_bounded
+        
+        # Get iris positions
+        left_iris = face_landmarks.landmark[468]   # Left iris center
+        right_iris = face_landmarks.landmark[473]  # Right iris center
+        
+        # Normalize iris positions relative to face bounding box
+        # Values will be between 0 and 1, where:
+        # (0,0) = top-left of face bounding box
+        # (1,1) = bottom-right of face bounding box
+        
+        norm_x_L = (left_iris.x - face_left_bounded) / max(face_width_bounded, 0.01)
+        norm_y_L = (left_iris.y - face_top_bounded) / max(face_height_bounded, 0.01)
+        
+        norm_x_R = (right_iris.x - face_left_bounded) / max(face_width_bounded, 0.01)
+        norm_y_R = (right_iris.y - face_top_bounded) / max(face_height_bounded, 0.01)
+        
+        # Clamp values to [0, 1] range to handle edge cases
+        norm_x_L = max(0, min(1, norm_x_L))
+        norm_y_L = max(0, min(1, norm_y_L))
+        norm_x_R = max(0, min(1, norm_x_R))
+        norm_y_R = max(0, min(1, norm_y_R))
+        
+        # Calculate head pose
+        yaw, pitch, roll, rotation_vector, translation_vector = self.calculate_head_pose(image, landmarks)
+        
+        # If head pose calculation failed, use default values
+        if yaw is None:
+            yaw, pitch, roll = 0.0, 0.0, 0.0
+            rotation_vector, translation_vector = None, None
+        
+        # Return features for model and visualization data
+        features = [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll]
+        visualization_data = (rotation_vector, translation_vector)
+        
+        return features, visualization_data
+    
+    def calculate_head_pose(self, image, landmarks):
+        """Calculate head pose (yaw, pitch, roll) using PnP algorithm"""
+        if not landmarks.multi_face_landmarks:
+            return None, None, None, None, None
+            
+        face_landmarks = landmarks.multi_face_landmarks[0]
+        h, w = image.shape[:2]
+        
+        # Define 3D model points for stable facial landmarks
+        # Using standard face model coordinates (in mm)
+        model_points = np.array([
+            (0.0, 0.0, 0.0),         # Nose tip (30)
+            (0.0, -330.0, -65.0),    # Chin (152)
+            (-225.0, 170.0, -135.0), # Left eye left corner (33)
+            (225.0, 170.0, -135.0),  # Right eye right corner (362)
+            (-150.0, -150.0, -125.0),# Left mouth corner (61)
+            (150.0, -150.0, -125.0)  # Right mouth corner (291)
+        ], dtype=np.float32)
+        
+        # Get corresponding 2D image points
+        landmark_indices = [30, 152, 33, 362, 61, 291]  # nose tip, chin, eye corners, mouth corners
+        image_points = []
+        
+        for idx in landmark_indices:
+            if idx < len(face_landmarks.landmark):
+                landmark = face_landmarks.landmark[idx]
+                image_points.append([landmark.x * w, landmark.y * h])
+        
+        if len(image_points) != 6:
+            return None, None, None, None, None
+            
+        image_points = np.array(image_points, dtype=np.float32)
+        
+        # Camera matrix estimation (assuming no lens distortion)
+        focal_length = w
+        center = (w/2, h/2)
+        camera_matrix = np.array([
+            [focal_length, 0, center[0]],
+            [0, focal_length, center[1]],
+            [0, 0, 1]
+        ], dtype=np.float32)
+        
+        # Distortion coefficients (assuming no distortion)
+        dist_coeffs = np.zeros((4, 1))
+        
+        # Solve PnP
+        success, rotation_vector, translation_vector = cv2.solvePnP(
+            model_points, image_points, camera_matrix, dist_coeffs
+        )
+        
+        if not success:
+            return None, None, None, None, None
+        
+        # Convert rotation vector to rotation matrix
+        rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
+        
+        # Extract Euler angles (yaw, pitch, roll) from rotation matrix
+        # Using a more direct approach to extract Euler angles
+        # Alternative method: extract angles directly from rotation matrix
+        sy = np.sqrt(rotation_matrix[0, 0] ** 2 + rotation_matrix[1, 0] ** 2)
+        
+        singular = sy < 1e-6
+        
+        if not singular:
+            x = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
+            y = np.arctan2(-rotation_matrix[2, 0], sy)
+            z = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+        else:
+            x = np.arctan2(-rotation_matrix[1, 2], rotation_matrix[1, 1])
+            y = np.arctan2(-rotation_matrix[2, 0], sy)
+            z = 0
+        
+        # Convert to degrees and assign to intuitive names
+        pitch = x * 180.0 / np.pi  # Rotation around X-axis (up/down)
+        yaw = y * 180.0 / np.pi    # Rotation around Y-axis (left/right)
+        roll = z * 180.0 / np.pi   # Rotation around Z-axis (tilt)
+        
+        # Normalize angles to reasonable ranges for feature consistency
+        yaw = np.clip(yaw, -90, 90) / 90.0       # Normalize to [-1, 1]
+        pitch = np.clip(pitch, -90, 90) / 90.0   # Normalize to [-1, 1]
+        roll = np.clip(roll, -45, 45) / 45.0     # Normalize to [-1, 1]
+        
+        return yaw, pitch, roll, rotation_vector, translation_vector
     
     def is_face_in_boundary(self, landmarks, image_width, image_height):
-        """Check if face is within the positioning boundary"""
+        """Check if face is within the positioning boundary using face bounding box"""
         if not landmarks.multi_face_landmarks:
             return False
             
         face_landmarks = landmarks.multi_face_landmarks[0]
         
-        # Get face bounding box
-        x_coords = [landmark.x for landmark in face_landmarks.landmark]
-        y_coords = [landmark.y for landmark in face_landmarks.landmark]
+        # Use the same face boundary landmarks as in extract_iris_features
+        face_boundary_landmarks = [
+            10, 151, 9, 175,    # Top of forehead/face
+            234, 454, 132, 361,  # Left and right face boundaries  
+            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323  # Bottom face boundary
+        ]
         
-        face_left = min(x_coords)
-        face_right = max(x_coords)
-        face_top = min(y_coords)
-        face_bottom = max(y_coords)
+        # Extract all face boundary coordinates
+        face_x_coords = []
+        face_y_coords = []
         
-        # Check if entire face is within boundary
+        for idx in face_boundary_landmarks:
+            if idx < len(face_landmarks.landmark):
+                landmark = face_landmarks.landmark[idx]
+                face_x_coords.append(landmark.x)
+                face_y_coords.append(landmark.y)
+        
+        if not face_x_coords or not face_y_coords:
+            return False
+        
+        # Calculate face bounding box
+        face_left = min(face_x_coords)
+        face_right = max(face_x_coords)
+        face_top = min(face_y_coords)
+        face_bottom = max(face_y_coords)
+        
+        # Check if the face bounding box is within the required boundary
+        # The entire face must be within the boundary for stable tracking
         return (face_left >= self.BOUNDARY_LEFT and 
                 face_right <= self.BOUNDARY_RIGHT and
                 face_top >= self.BOUNDARY_TOP and 
@@ -134,6 +322,160 @@ class EyeTracker:
         # Add text instructions
         text = "Position your face in the box and press ENTER" if not is_positioned_correctly else "Good! Press ENTER to start calibration"
         cv2.putText(image, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+    
+    def draw_face_bounding_box(self, image, landmarks, color=(255, 255, 0)):
+        """Draw the face bounding box for visualization"""
+        if not landmarks.multi_face_landmarks:
+            return
+            
+        face_landmarks = landmarks.multi_face_landmarks[0]
+        h, w = image.shape[:2]
+        
+        # Use the same face boundary landmarks as in extract_iris_features
+        face_boundary_landmarks = [
+            10, 151, 9, 175,    # Top of forehead/face
+            234, 454, 132, 361,  # Left and right face boundaries  
+            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323  # Bottom face boundary
+        ]
+        
+        # Extract all face boundary coordinates
+        face_x_coords = []
+        face_y_coords = []
+        
+        for idx in face_boundary_landmarks:
+            if idx < len(face_landmarks.landmark):
+                landmark = face_landmarks.landmark[idx]
+                face_x_coords.append(landmark.x)
+                face_y_coords.append(landmark.y)
+        
+        if not face_x_coords or not face_y_coords:
+            return
+        
+        # Calculate face bounding box
+        face_left = min(face_x_coords)
+        face_right = max(face_x_coords)
+        face_top = min(face_y_coords)
+        face_bottom = max(face_y_coords)
+        
+        # Add margin to create a more stable bounding box (10% margin)
+        face_width = face_right - face_left
+        face_height = face_bottom - face_top
+        margin_x = face_width * 0.1
+        margin_y = face_height * 0.1
+        
+        face_left_bounded = max(0, face_left - margin_x)
+        face_right_bounded = min(1, face_right + margin_x)
+        face_top_bounded = max(0, face_top - margin_y)
+        face_bottom_bounded = min(1, face_bottom + margin_y)
+        
+        # Convert to pixel coordinates
+        left_px = int(face_left_bounded * w)
+        right_px = int(face_right_bounded * w)
+        top_px = int(face_top_bounded * h)
+        bottom_px = int(face_bottom_bounded * h)
+        
+        # Draw face bounding box
+        cv2.rectangle(image, (left_px, top_px), (right_px, bottom_px), color, 2)
+        
+        # Add label
+        cv2.putText(image, "Face Boundary", (left_px, top_px - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+    
+    def draw_head_pose_axis(self, image, rvec, tvec, cam_matrix):
+        """Draw 3D axis on the nose to visualize head pose"""
+        if rvec is None or tvec is None:
+            return
+        
+        # Define 3D axis points (length in mm)
+        axis_length = 100
+        axis_points = np.array([
+            (0, 0, 0),                    # Origin (nose tip)
+            (axis_length, 0, 0),          # X-axis (red) - right
+            (0, axis_length, 0),          # Y-axis (green) - down
+            (0, 0, -axis_length)          # Z-axis (blue) - forward
+        ], dtype=np.float32)
+        
+        # Project 3D points to 2D image plane
+        projected_points, _ = cv2.projectPoints(
+            axis_points, rvec, tvec, cam_matrix, np.zeros((4, 1))
+        )
+        
+        # Convert to integer coordinates
+        projected_points = projected_points.reshape(-1, 2).astype(int)
+        
+        if len(projected_points) == 4:
+            origin = tuple(projected_points[0])
+            x_axis = tuple(projected_points[1])
+            y_axis = tuple(projected_points[2])
+            z_axis = tuple(projected_points[3])
+            
+            # Draw axis lines with different colors
+            cv2.line(image, origin, x_axis, (0, 0, 255), 3)  # X-axis: Red
+            cv2.line(image, origin, y_axis, (0, 255, 0), 3)  # Y-axis: Green
+            cv2.line(image, origin, z_axis, (255, 0, 0), 3)  # Z-axis: Blue
+            
+            # Add labels
+            cv2.putText(image, 'X', x_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            cv2.putText(image, 'Y', y_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(image, 'Z', z_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+    
+    def visualize_all_calibration_targets(self):
+        """Display all calibration targets for verification"""
+        print("\n--- Calibration Target Visualization ---")
+        window = np.zeros((self.WINDOW_HEIGHT, self.WINDOW_WIDTH, 3), dtype=np.uint8)
+        
+        # Draw all targets with different colors for different groups
+        colors = {
+            'corners': (255, 0, 0),    # Red for corners
+            'edges': (0, 255, 0),      # Green for edges  
+            'grid': (0, 0, 255)        # Blue for grid
+        }
+        
+        for i, (target_x, target_y) in enumerate(self.calibration_targets):
+            # Determine target group and color
+            if i < 4:  # Corners
+                color = colors['corners']
+                group = "Corner"
+            elif i < 8:  # Edges
+                color = colors['edges']
+                group = "Edge"
+            else:  # Grid
+                color = colors['grid']
+                group = "Grid"
+            
+            # Draw target
+            cv2.circle(window, (target_x, target_y), 15, color, -1)
+            cv2.circle(window, (target_x, target_y), 18, (255, 255, 255), 1)
+            
+            # Add target number
+            cv2.putText(window, str(i + 1), (target_x - 8, target_y + 5), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+        
+        # Add legend
+        cv2.putText(window, "Calibration Targets Overview", (50, 40), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 2)
+        cv2.putText(window, f"Total: {len(self.calibration_targets)} targets", (50, 80), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        
+        # Legend
+        legend_y = 120
+        cv2.circle(window, (70, legend_y), 10, colors['corners'], -1)
+        cv2.putText(window, "Corners (1-4)", (90, legend_y + 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        
+        cv2.circle(window, (70, legend_y + 30), 10, colors['edges'], -1)
+        cv2.putText(window, "Edges (5-8)", (90, legend_y + 35), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        
+        cv2.circle(window, (70, legend_y + 60), 10, colors['grid'], -1)
+        cv2.putText(window, "Grid (9-17)", (90, legend_y + 65), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+        
+        cv2.putText(window, "Press any key to continue...", (50, self.WINDOW_HEIGHT - 50), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+        
+        cv2.namedWindow('Calibration Target Overview', cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty('Calibration Target Overview', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.imshow('Calibration Target Overview', window)
+        cv2.waitKey(0)
+        cv2.destroyWindow('Calibration Target Overview')
     
     def check_face_detection_quality(self, landmarks):
         """Check if face detection meets quality threshold"""
@@ -202,6 +544,9 @@ class EyeTracker:
             
             # Draw boundary box with adjusted coordinates for smaller window
             self.draw_boundary_box_warning(frame_resized, face_in_boundary and face_quality_ok)
+            
+            # Draw face bounding box for visualization
+            self.draw_face_bounding_box(frame_resized, results, color=(255, 255, 0))
             
             # Add warning overlay
             overlay = frame_resized.copy()
@@ -293,6 +638,9 @@ class EyeTracker:
             # Draw boundary box and face mesh
             self.draw_boundary_box(frame_resized, is_positioned)
             
+            # Draw face bounding box for visualization
+            self.draw_face_bounding_box(frame_resized, results, color=(255, 255, 0))
+            
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
                     self.mp_drawing.draw_landmarks(
@@ -345,8 +693,9 @@ class EyeTracker:
                 return []
             
             # Extract features
-            features = self.extract_iris_features(frame, results)
-            if features:
+            result = self.extract_iris_features(frame, results)
+            if result:
+                features, _ = result  # Unpack features and visualization data
                 captured_features.append(features + [target_x, target_y])
             
             # Show capture animation (shrinking circle)
@@ -363,20 +712,40 @@ class EyeTracker:
     
     def calibration_process(self, cap):
         """Main calibration process"""
-        print("--- Starting Calibration ---")
+        total_targets = len(self.calibration_targets)
+        print(f"--- Starting Calibration ({total_targets} targets) ---")
+        print("Sequence: 4 Corners → 4 Edges → 9 Grid Points")
         
         for i, (target_x, target_y) in enumerate(self.calibration_targets):
-            print(f"Calibration target {i + 1}/9 at ({target_x}, {target_y})")
+            target_label = self.target_labels[i] if i < len(self.target_labels) else f"Target {i+1}"
+            print(f"Calibration target {i + 1}/{total_targets}: {target_label} at ({target_x}, {target_y})")
             
             # Create calibration window
             window = np.zeros((self.WINDOW_HEIGHT, self.WINDOW_WIDTH, 3), dtype=np.uint8)
             cv2.namedWindow('Calibration', cv2.WND_PROP_FULLSCREEN)
             cv2.setWindowProperty('Calibration', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
             
-            # Draw target
+            # Draw target with enhanced visualization
             cv2.circle(window, (target_x, target_y), 30, (0, 0, 255), -1)
-            cv2.putText(window, f"Click the red circle ({i + 1}/9)", 
+            cv2.circle(window, (target_x, target_y), 35, (255, 255, 255), 2)  # White outline
+            
+            # Enhanced text display
+            cv2.putText(window, f"Click the red circle ({i + 1}/{total_targets})", 
                        (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            cv2.putText(window, f"Target: {target_label}", 
+                       (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
+            
+            # Show progress bar
+            progress_width = 400
+            progress_height = 20
+            progress_x = 50
+            progress_y = 120
+            progress_fill = int((i / total_targets) * progress_width)
+            
+            cv2.rectangle(window, (progress_x, progress_y), (progress_x + progress_width, progress_y + progress_height), (100, 100, 100), 2)
+            cv2.rectangle(window, (progress_x, progress_y), (progress_x + progress_fill, progress_y + progress_height), (0, 255, 0), -1)
+            cv2.putText(window, f"Progress: {i}/{total_targets}", 
+                       (progress_x + progress_width + 20, progress_y + 15), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
             
             # Set up mouse callback
             mouse_data = {'target': (target_x, target_y), 'clicked': False}
@@ -424,7 +793,7 @@ class EyeTracker:
         
         # Create DataFrame
         df = pd.DataFrame(self.calibration_data, 
-                         columns=['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'target_x', 'target_y'])
+                         columns=['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll', 'target_x', 'target_y'])
         
         # Export to CSV
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -436,7 +805,7 @@ class EyeTracker:
         
         # Figure 1: Histograms of features
         plt.figure(figsize=(12, 8))
-        df[['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R']].hist(bins=20, alpha=0.7, figsize=(12, 8))
+        df[['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']].hist(bins=20, alpha=0.7, figsize=(12, 8))
         plt.suptitle('Feature Histograms', fontsize=16)
         plt.tight_layout()
         plt.show()
@@ -450,13 +819,13 @@ class EyeTracker:
         plt.show()
         
         # Figure 3: Scatter plots
-        features = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R']
-        fig, axes = plt.subplots(2, 2, figsize=(15, 12))
+        features = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
+        fig, axes = plt.subplots(3, 3, figsize=(18, 15))
         fig.suptitle('Features vs Target Coordinates', fontsize=16)
         
         for i, feature in enumerate(features):
-            row = i // 2
-            col = i % 2
+            row = i // 3
+            col = i % 3
             ax = axes[row, col]
             
             ax.scatter(df[feature], df['target_x'], alpha=0.6, label='target_x', color='blue')
@@ -465,6 +834,12 @@ class EyeTracker:
             ax.set_ylabel('Target Coordinates')
             ax.legend()
             ax.set_title(f'{feature} vs Targets')
+        
+        # Hide unused subplots
+        for i in range(len(features), 9):
+            row = i // 3
+            col = i % 3
+            axes[row, col].set_visible(False)
         
         plt.tight_layout()
         plt.show()
@@ -476,7 +851,7 @@ class EyeTracker:
         print("--- Training Model ---")
         
         # Prepare data
-        X = df[['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R']].values
+        X = df[['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']].values
         y = df[['target_x', 'target_y']].values
         
         # Split data
@@ -530,9 +905,10 @@ class EyeTracker:
             window = np.zeros((self.WINDOW_HEIGHT, self.WINDOW_WIDTH, 3), dtype=np.uint8)
             
             # Extract features and predict
-            features = self.extract_iris_features(frame, results)
-            if features and self.model:
-                prediction = self.model.predict([features[:4]])[0]
+            result = self.extract_iris_features(frame, results)
+            if result and self.model:
+                features, (rotation_vector, translation_vector) = result
+                prediction = self.model.predict([features[:7]])[0]  # Use all 7 features
                 pred_x, pred_y = int(prediction[0]), int(prediction[1])
                 
                 # Apply smoothing with exponential moving average
@@ -551,6 +927,29 @@ class EyeTracker:
                 
                 # Draw gaze point
                 cv2.circle(window, (smoothed_x_int, smoothed_y_int), 15, (0, 0, 255), -1)
+                
+                # Draw head pose axis if available
+                if rotation_vector is not None and translation_vector is not None:
+                    # Create camera matrix for visualization
+                    h, w = frame.shape[:2]
+                    focal_length = w
+                    center = (w/2, h/2)
+                    camera_matrix = np.array([
+                        [focal_length, 0, center[0]],
+                        [0, focal_length, center[1]],
+                        [0, 0, 1]
+                    ], dtype=np.float32)
+                    
+                    self.draw_head_pose_axis(window, rotation_vector, translation_vector, camera_matrix)
+                
+                # Display head pose values
+                yaw, pitch, roll = features[4], features[5], features[6]
+                cv2.putText(window, f"Yaw: {yaw:.2f}", (50, 100), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.putText(window, f"Pitch: {pitch:.2f}", (50, 130), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                cv2.putText(window, f"Roll: {roll:.2f}", (50, 160), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
             # Add instructions
             cv2.putText(window, "Gaze Prediction - Press 'q' to quit", 
@@ -583,6 +982,10 @@ class EyeTracker:
             if not self.user_positioning_phase(cap):
                 print("User positioning cancelled.")
                 return
+            
+            # Step 1.5: Show calibration target overview
+            print("Showing calibration target overview...")
+            self.visualize_all_calibration_targets()
             
             # Step 2: Calibration
             if not self.calibration_process(cap):
