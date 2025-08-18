@@ -99,6 +99,50 @@ class EyeTracker:
             ["Grid TL", "Grid TC", "Grid TR", "Grid ML", "Grid MC", "Grid MR", "Grid BL", "Grid BC", "Grid BR"]
         )
         
+        # Boundary hysteresis state tracking
+        self.is_currently_in_boundary = False
+        self.boundary_exit_timestamp = None
+        
+    def calculate_face_bounding_box(self, landmarks):
+        """Calculate the actual bounding box of the user's face"""
+        if not landmarks.multi_face_landmarks:
+            return None
+            
+        face_landmarks = landmarks.multi_face_landmarks[0]
+        
+        # Use the same comprehensive set of face boundary landmarks as in extract_iris_features
+        face_boundary_landmarks = [
+            10, 151, 9, 175,    # Top of forehead/face
+            234, 454, 132, 361,  # Left and right face boundaries  
+            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323  # Bottom face boundary
+        ]
+        
+        # Extract all face boundary coordinates
+        face_x_coords = []
+        face_y_coords = []
+        
+        for idx in face_boundary_landmarks:
+            if idx < len(face_landmarks.landmark):
+                landmark = face_landmarks.landmark[idx]
+                face_x_coords.append(landmark.x)
+                face_y_coords.append(landmark.y)
+        
+        if not face_x_coords or not face_y_coords:
+            return None
+        
+        # Calculate actual face bounding box
+        face_left = min(face_x_coords)
+        face_right = max(face_x_coords)
+        face_top = min(face_y_coords)
+        face_bottom = max(face_y_coords)
+        
+        return {
+            'left': face_left,
+            'right': face_right,
+            'top': face_top,
+            'bottom': face_bottom
+        }
+        
     def extract_iris_features(self, image, landmarks):
         """Extract normalized iris position features relative to face bounding box and head pose"""
         if not landmarks.multi_face_landmarks:
@@ -266,47 +310,21 @@ class EyeTracker:
         return yaw, pitch, roll, rotation_vector, translation_vector
     
     def is_face_in_boundary(self, landmarks, image_width, image_height):
-        """Check if face is within the positioning boundary using face bounding box"""
-        if not landmarks.multi_face_landmarks:
-            return False
-            
-        face_landmarks = landmarks.multi_face_landmarks[0]
+        """Check if face bounding box is completely within the positioning boundary"""
+        face_box = self.calculate_face_bounding_box(landmarks)
         
-        # Use the same face boundary landmarks as in extract_iris_features
-        face_boundary_landmarks = [
-            10, 151, 9, 175,    # Top of forehead/face
-            234, 454, 132, 361,  # Left and right face boundaries  
-            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323  # Bottom face boundary
-        ]
-        
-        # Extract all face boundary coordinates
-        face_x_coords = []
-        face_y_coords = []
-        
-        for idx in face_boundary_landmarks:
-            if idx < len(face_landmarks.landmark):
-                landmark = face_landmarks.landmark[idx]
-                face_x_coords.append(landmark.x)
-                face_y_coords.append(landmark.y)
-        
-        if not face_x_coords or not face_y_coords:
+        if face_box is None:
             return False
         
-        # Calculate face bounding box
-        face_left = min(face_x_coords)
-        face_right = max(face_x_coords)
-        face_top = min(face_y_coords)
-        face_bottom = max(face_y_coords)
-        
-        # Check if the face bounding box is within the required boundary
+        # Check if the entire face bounding box is within the absolute boundary
         # The entire face must be within the boundary for stable tracking
-        return (face_left >= self.BOUNDARY_LEFT and 
-                face_right <= self.BOUNDARY_RIGHT and
-                face_top >= self.BOUNDARY_TOP and 
-                face_bottom <= self.BOUNDARY_BOTTOM)
+        return (face_box['left'] >= self.BOUNDARY_LEFT and 
+                face_box['right'] <= self.BOUNDARY_RIGHT and
+                face_box['top'] >= self.BOUNDARY_TOP and 
+                face_box['bottom'] <= self.BOUNDARY_BOTTOM)
     
     def draw_boundary_box(self, image, is_positioned_correctly):
-        """Draw the positioning boundary box"""
+        """Draw the positioning boundary box (absolute boundary)"""
         h, w = image.shape[:2]
         
         left = int(self.BOUNDARY_LEFT * w)
@@ -320,65 +338,36 @@ class EyeTracker:
         cv2.rectangle(image, (left, top), (right, bottom), color, thickness)
         
         # Add text instructions
-        text = "Position your face in the box and press ENTER" if not is_positioned_correctly else "Good! Press ENTER to start calibration"
+        if not is_positioned_correctly:
+            text = "Position your YELLOW face box inside the GREEN boundary"
+        else:
+            text = "Perfect! Your face is properly positioned. Press ENTER to continue"
         cv2.putText(image, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        
+        # Add boundary label
+        cv2.putText(image, "Target Area", (left, top - 10), 
+                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     
-    def draw_face_bounding_box(self, image, landmarks, color=(255, 255, 0)):
-        """Draw the face bounding box for visualization"""
-        if not landmarks.multi_face_landmarks:
+    def draw_face_bounding_box(self, image, landmarks, color=(0, 255, 255)):
+        """Draw the actual face bounding box for visualization (yellow by default)"""
+        face_box = self.calculate_face_bounding_box(landmarks)
+        
+        if face_box is None:
             return
             
-        face_landmarks = landmarks.multi_face_landmarks[0]
         h, w = image.shape[:2]
         
-        # Use the same face boundary landmarks as in extract_iris_features
-        face_boundary_landmarks = [
-            10, 151, 9, 175,    # Top of forehead/face
-            234, 454, 132, 361,  # Left and right face boundaries  
-            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323  # Bottom face boundary
-        ]
-        
-        # Extract all face boundary coordinates
-        face_x_coords = []
-        face_y_coords = []
-        
-        for idx in face_boundary_landmarks:
-            if idx < len(face_landmarks.landmark):
-                landmark = face_landmarks.landmark[idx]
-                face_x_coords.append(landmark.x)
-                face_y_coords.append(landmark.y)
-        
-        if not face_x_coords or not face_y_coords:
-            return
-        
-        # Calculate face bounding box
-        face_left = min(face_x_coords)
-        face_right = max(face_x_coords)
-        face_top = min(face_y_coords)
-        face_bottom = max(face_y_coords)
-        
-        # Add margin to create a more stable bounding box (10% margin)
-        face_width = face_right - face_left
-        face_height = face_bottom - face_top
-        margin_x = face_width * 0.1
-        margin_y = face_height * 0.1
-        
-        face_left_bounded = max(0, face_left - margin_x)
-        face_right_bounded = min(1, face_right + margin_x)
-        face_top_bounded = max(0, face_top - margin_y)
-        face_bottom_bounded = min(1, face_bottom + margin_y)
-        
-        # Convert to pixel coordinates
-        left_px = int(face_left_bounded * w)
-        right_px = int(face_right_bounded * w)
-        top_px = int(face_top_bounded * h)
-        bottom_px = int(face_bottom_bounded * h)
+        # Convert normalized coordinates to pixel coordinates
+        left_px = int(face_box['left'] * w)
+        right_px = int(face_box['right'] * w)
+        top_px = int(face_box['top'] * h)
+        bottom_px = int(face_box['bottom'] * h)
         
         # Draw face bounding box
         cv2.rectangle(image, (left_px, top_px), (right_px, bottom_px), color, 2)
         
         # Add label
-        cv2.putText(image, "Face Boundary", (left_px, top_px - 10), 
+        cv2.putText(image, "Your Face", (left_px, top_px - 10), 
                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
     
     def draw_head_pose_axis(self, image, rvec, tvec, cam_matrix):
@@ -614,12 +603,16 @@ class EyeTracker:
         return True
     
     def user_positioning_phase(self, cap):
-        """Guide user to correct positioning"""
+        """Guide user to correct positioning with hysteresis"""
         cv2.namedWindow('User Positioning', cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty('User Positioning', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         
         print("--- User Positioning Phase ---")
-        print("Position your face within the boundary box and press ENTER")
+        print("Position your yellow face box completely within the boundary box and press ENTER")
+        
+        # Reset hysteresis state for positioning phase
+        self.is_currently_in_boundary = False
+        self.boundary_exit_timestamp = None
         
         while True:
             ret, frame = cap.read()
@@ -632,14 +625,46 @@ class EyeTracker:
             
             results = self.face_mesh.process(rgb_frame)
             
-            # Check positioning
-            is_positioned = self.is_face_in_boundary(results, self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
+            # Perform geometric boundary check
+            is_geometrically_in = self.is_face_in_boundary(results, self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
             
-            # Draw boundary box and face mesh
-            self.draw_boundary_box(frame_resized, is_positioned)
+            # Apply hysteresis logic
+            current_time = time.time()
             
-            # Draw face bounding box for visualization
-            self.draw_face_bounding_box(frame_resized, results, color=(255, 255, 0))
+            if is_geometrically_in:
+                # User is back in boundary - reset hysteresis
+                self.is_currently_in_boundary = True
+                self.boundary_exit_timestamp = None
+            else:
+                # User is out of boundary
+                if self.boundary_exit_timestamp is None:
+                    # First frame out of boundary - start grace period
+                    self.boundary_exit_timestamp = current_time
+                elif current_time - self.boundary_exit_timestamp >= 1.0:
+                    # Grace period expired - user is officially out
+                    self.is_currently_in_boundary = False
+                # If still within grace period, maintain previous state
+            
+            # Determine final positioning status for UI
+            if is_geometrically_in:
+                is_positioned_for_ui = True
+            elif self.boundary_exit_timestamp is not None and current_time - self.boundary_exit_timestamp < 1.0:
+                is_positioned_for_ui = True  # Still in grace period
+            else:
+                is_positioned_for_ui = False
+            
+            # Draw boundary box (changes color based on positioning status)
+            self.draw_boundary_box(frame_resized, is_positioned_for_ui)
+            
+            # Draw face bounding box for visualization (always yellow)
+            self.draw_face_bounding_box(frame_resized, results, color=(0, 255, 255))
+            
+            # Add timing information if in grace period
+            if not is_geometrically_in and self.boundary_exit_timestamp is not None:
+                time_remaining = 1.0 - (current_time - self.boundary_exit_timestamp)
+                if time_remaining > 0:
+                    cv2.putText(frame_resized, f"Grace period: {time_remaining:.1f}s", 
+                               (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
             
             if results.multi_face_landmarks:
                 for face_landmarks in results.multi_face_landmarks:
@@ -652,7 +677,7 @@ class EyeTracker:
             cv2.imshow('User Positioning', frame_resized)
             
             key = cv2.waitKey(1) & 0xFF
-            if key == 13 and is_positioned:  # Enter key
+            if key == 13 and is_positioned_for_ui:  # Enter key
                 break
             elif key == 27:  # Escape key
                 cv2.destroyAllWindows()
