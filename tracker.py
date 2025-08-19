@@ -255,6 +255,11 @@ class EyeTracker:
             if self.model is None:
                 return
             
+            # Save the trained model for later use
+            saved_filename = model_utils.save_model(self.model)
+            if saved_filename:
+                print(f"💾 Model saved as: {saved_filename}")
+            
             self.real_time_prediction(cap)
 
         finally:
