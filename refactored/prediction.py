@@ -4,6 +4,7 @@ import numpy as np
 import joblib
 import os
 from calibration import EyeTrackerCalibrator
+from eye_movement_analyzer import EyeMovementAnalyzer
 
 class GazePredictor:
     def __init__(self, model_path=None):
@@ -15,6 +16,10 @@ class GazePredictor:
         self.model_path = model_path
         self.smoothed_x = None
         self.smoothed_y = None
+        
+        # Initialize eye movement analyzer
+        self.movement_analyzer = None
+        self.analysis_enabled = False
         
         # Load model if path provided
         if model_path:
@@ -40,6 +45,36 @@ class GazePredictor:
             print(f"Error loading model: {str(e)}")
             return False
     
+    def enable_movement_analysis(self, window_width=None, window_height=None):
+        """Enable eye movement analysis during prediction"""
+        if window_width is None:
+            window_width = self.calibrator.WINDOW_WIDTH
+        if window_height is None:
+            window_height = self.calibrator.WINDOW_HEIGHT
+            
+        self.movement_analyzer = EyeMovementAnalyzer(window_width, window_height)
+        self.analysis_enabled = True
+        print("✅ Eye movement analysis enabled")
+    
+    def disable_movement_analysis(self):
+        """Disable eye movement analysis"""
+        self.analysis_enabled = False
+        self.movement_analyzer = None
+        print("❌ Eye movement analysis disabled")
+    
+    def start_analysis_session(self):
+        """Start a new movement analysis session"""
+        if self.movement_analyzer:
+            self.movement_analyzer.start_reading_session()
+            print("📊 Started eye movement analysis session")
+    
+    def finish_analysis_session(self, auto_export=True):
+        """Finish movement analysis session and export data"""
+        if self.movement_analyzer:
+            csv_file = self.movement_analyzer.finish_analysis_session(auto_export)
+            return csv_file
+        return None
+    
     def predict_gaze_point(self, features):
         """Predict gaze coordinates from extracted features"""
         if self.model is None:
@@ -53,6 +88,49 @@ class GazePredictor:
         except Exception as e:
             print(f"Error during prediction: {str(e)}")
             return None
+    
+    def predict_gaze_point_with_kalman(self, features):
+        """Enhanced gaze prediction with adaptive Kalman filtering for better accuracy in text reading"""
+        # Get raw prediction first
+        raw_prediction = self.predict_gaze_point(features)
+        if not raw_prediction:
+            return None
+        
+        raw_x, raw_y = raw_prediction
+        
+        # If movement analyzer is active and has Kalman filter, use it for enhancement
+        if self.analysis_enabled and self.movement_analyzer:
+            # Get Kalman prediction
+            kalman_prediction = self.movement_analyzer.predict_next_gaze()
+            
+            if kalman_prediction:
+                kalman_x, kalman_y = kalman_prediction
+                
+                # Adaptive blending based on reading context
+                current_movement_type = self.movement_analyzer.classify_movement_type()
+                
+                if current_movement_type == "Fixation":
+                    # During fixations, trust Kalman more for stability
+                    blend_factor = 0.4  # 40% Kalman, 60% raw
+                elif current_movement_type == "Saccade":
+                    # During saccades, trust raw prediction more for responsiveness
+                    blend_factor = 0.2  # 20% Kalman, 80% raw
+                else:  # Smooth pursuit
+                    # Balanced blending for smooth movements
+                    blend_factor = 0.3  # 30% Kalman, 70% raw
+                
+                # Enhanced blending with bounds checking
+                enhanced_x = int(raw_x * (1 - blend_factor) + kalman_x * blend_factor)
+                enhanced_y = int(raw_y * (1 - blend_factor) + kalman_y * blend_factor)
+                
+                # Ensure predictions stay within screen bounds
+                enhanced_x = max(0, min(self.calibrator.WINDOW_WIDTH - 1, enhanced_x))
+                enhanced_y = max(0, min(self.calibrator.WINDOW_HEIGHT - 1, enhanced_y))
+                
+                return enhanced_x, enhanced_y
+        
+        # Fallback to raw prediction if Kalman not available
+        return raw_prediction
     
     def apply_smoothing(self, pred_x, pred_y):
         """Apply exponential smoothing to predictions"""
@@ -111,13 +189,7 @@ class GazePredictor:
     
     def create_text_window(self):
         """Create window with reading text for text analysis mode"""
-        # Load the generated text image
-        if os.path.exists(self.calibrator.text_image_path):
-            text_window = cv2.imread(self.calibrator.text_image_path)
-            if text_window is not None:
-                return text_window
-        
-        # Fallback: create text window manually
+        # Create text window manually using OpenCV
         window = np.ones((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8) * 255
         
         text = """The benefits of pets
@@ -146,21 +218,74 @@ space but still want a furry friend to snuggle with. Birds can encourage social 
 mind sharp if you're an older adult. Snakes, lizards, and other reptiles can make for exotic companions. Even
 watching fish in an aquarium can help reduce muscle tension and lower your pulse rate."""
         
-        # Draw text on window
-        y = 50
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.6
-        line_spacing = 30
-        color = (0, 0, 0)  # Black color
-        thickness = 1
+        # Calculate layout parameters for better centering and spacing
+        side_margin = self.calibrator.WINDOW_WIDTH // 15  # 6.7% margins on each side for more text space
+        top_margin = 70  # Slightly less space at top for more content
+        max_width = self.calibrator.WINDOW_WIDTH - 2 * side_margin
+        max_height = self.calibrator.WINDOW_HEIGHT - top_margin - 20  # Less bottom margin
         
-        paragraphs = text.split('\n\n')
+        y = top_margin
+        
+        # Use better font settings for improved readability
+        title_font = cv2.FONT_HERSHEY_DUPLEX  # Better quality font
+        text_font = cv2.FONT_HERSHEY_DUPLEX   # Better quality font
+        title_font_scale = 1.2  # Smaller title to save space
+        text_font_scale = 0.5  # Slightly smaller text to accommodate more spacing
+        title_thickness = 2
+        text_thickness = 1
+        color = (0, 0, 0)  # Black color
+        line_spacing = 28  # Increased line spacing for better readability
+        
+        # Split text into title and content
+        lines = text.strip().split('\n')
+        title = lines[0] if lines else "The benefits of pets"
+        content_lines = lines[2:] if len(lines) > 2 else lines[1:]  # Skip title and empty line
+        content = '\n'.join(content_lines)
+        
+        # Draw title
+        title_size = cv2.getTextSize(title, title_font, title_font_scale, title_thickness)[0]
+        title_x = (self.calibrator.WINDOW_WIDTH - title_size[0]) // 2  # Center the title
+        cv2.putText(window, title, (title_x, y), title_font, title_font_scale, color, title_thickness)
+        y += 35  # Reduced space after title to fit more content
+        
+        # Process paragraphs
+        paragraphs = content.split('\n\n')
         for paragraph in paragraphs:
-            lines = paragraph.split('\n')
-            for line in lines:
-                cv2.putText(window, line, (50, y), font, font_scale, color, thickness)
-                y += line_spacing
-            y += 20  # Extra space between paragraphs
+            # Check if we have enough space for at least one line
+            if y > max_height - 20:
+                break
+                
+            # Process each paragraph line by line
+            paragraph_lines = paragraph.strip().split('\n')
+            for paragraph_line in paragraph_lines:
+                words = paragraph_line.split()
+                current_line = ""
+                
+                for word in words:
+                    test_line = current_line + (" " if current_line else "") + word
+                    text_size = cv2.getTextSize(test_line, text_font, text_font_scale, text_thickness)[0]
+                    
+                    if text_size[0] <= max_width:
+                        current_line = test_line
+                    else:
+                        if current_line:
+                            cv2.putText(window, current_line, (side_margin, y), text_font, text_font_scale, color, text_thickness)
+                            y += line_spacing
+                            if y > max_height - 20:
+                                break
+                        current_line = word
+                
+                # Draw the remaining text
+                if current_line and y <= max_height - 20:
+                    cv2.putText(window, current_line, (side_margin, y), text_font, text_font_scale, color, text_thickness)
+                    y += line_spacing
+                    
+                if y > max_height - 20:
+                    break
+                    
+            y += 6  # Reduced space between paragraphs to fit more content
+            if y > max_height - 20:
+                break
         
         return window
     
@@ -191,6 +316,12 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                 print("Failed to create text window. Reverting to standard mode.")
                 mode = "standard"
                 text_window = None
+            else:
+                # ALWAYS enable movement analysis for text reading mode
+                print("📊 Automatic eye movement analysis enabled for text reading")
+                print("🔮 Enhanced Kalman filtering activated for improved accuracy")
+                self.enable_movement_analysis()
+                self.start_analysis_session()
         else:
             text_window = None
         
@@ -226,13 +357,26 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                 result = self.calibrator.extract_iris_features(frame, results)
                 if result and self.model:
                     features, (rotation_vector, translation_vector) = result
-                    prediction = self.predict_gaze_point(features)
+                    
+                    # Use Kalman-enhanced prediction for text reading mode
+                    if mode == "text_analysis" and self.analysis_enabled:
+                        prediction = self.predict_gaze_point_with_kalman(features)
+                    else:
+                        prediction = self.predict_gaze_point(features)
                     
                     if prediction:
                         pred_x, pred_y = prediction
                         
+                        # Flip x-coordinate if frame is flipped to maintain mirror effect
+                        if not self.calibrator.FLIP_FRAME:
+                            pred_x = self.calibrator.WINDOW_WIDTH - pred_x
+                        
                         # Apply smoothing
                         smoothed_x_int, smoothed_y_int = self.apply_smoothing(pred_x, pred_y)
+                        
+                        # Add gaze point to movement analyzer if enabled
+                        if self.analysis_enabled and self.movement_analyzer:
+                            self.movement_analyzer.add_gaze_point(smoothed_x_int, smoothed_y_int)
                         
                         # Draw gaze point (smaller and semi-transparent in text mode)
                         if mode == "text_analysis":
@@ -266,10 +410,11 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                             cv2.putText(window, f"Roll: {roll:.2f}", (50, 160), 
                                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
                 
-                # Add instructions
+                # Add instructions in top-left corner
                 text_color = (0, 0, 0) if mode == "text_analysis" else (255, 255, 255)
-                cv2.putText(window, f"{window_name} - Press 'q' to quit", 
-                           (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, text_color, 2)
+                instruction_text = "Press 'q' to quit"
+                cv2.putText(window, instruction_text, (20, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2)
                 
                 cv2.imshow(window_name, window)
                 
@@ -280,6 +425,17 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
         finally:
             cap.release()
             cv2.destroyAllWindows()
+            
+            # Finish movement analysis session if it was active
+            if self.analysis_enabled and self.movement_analyzer:
+                print("\n🔬 Automatic eye movement analysis completed!")
+                csv_file = self.finish_analysis_session(auto_export=True)
+                if csv_file:
+                    print(f"📊 Eye movement data automatically saved to: {csv_file}")
+                    print("💡 This data is ready for model training!")
+                else:
+                    print("⚠️  No movement data was collected during this session")
+                self.disable_movement_analysis()
     
     def run_prediction(self, model_path=None, mode="standard"):
         """Run real-time prediction with specified model and mode"""
@@ -299,6 +455,30 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
         self.real_time_prediction(mode)
         
         print("=== Prediction Session Complete ===")
+    
+    def run_prediction_with_analysis(self, model_path=None, mode="text_analysis"):
+        """Run prediction with movement analysis enabled (defaults to text analysis mode)"""
+        print("=== Gaze Prediction System with Movement Analysis ===")
+        
+        # Load model if provided
+        if model_path and model_path != self.model_path:
+            if not self.load_model(model_path):
+                print("Failed to load model. Cannot run prediction.")
+                return
+        
+        if self.model is None:
+            print("No model available. Please provide a model path or train a model first.")
+            return
+        
+        # Force text analysis mode for data collection
+        if mode != "text_analysis":
+            print("⚠️  Switching to text_analysis mode for movement data collection")
+            mode = "text_analysis"
+        
+        # Run real-time prediction with analysis
+        self.real_time_prediction(mode)
+        
+        print("=== Prediction Session with Analysis Complete ===")
 
 if __name__ == "__main__":
     # Example usage
@@ -307,8 +487,10 @@ if __name__ == "__main__":
     # Load a trained model
     model_path = "models/gaze_model_20250821_120000.joblib"  # Replace with actual path
     
-    # Run prediction in standard mode
-    predictor.run_prediction(model_path, mode="standard")
+    # DEFAULT: Text reading with automatic eye movement analysis
+    # This automatically collects movement data every time you read text
+    predictor.run_prediction(model_path, mode="text_analysis")
     
-    # Or run in text analysis mode
-    # predictor.run_prediction(model_path, mode="text_analysis")
+    # Alternative options:
+    # predictor.run_prediction(model_path, mode="standard")        # Standard mode (no text, no analysis)
+    # predictor.run_prediction_with_analysis(model_path)          # Explicit analysis mode (same as text_analysis)

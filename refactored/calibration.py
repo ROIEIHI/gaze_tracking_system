@@ -6,7 +6,6 @@ import time
 import datetime
 import math
 import os
-from PIL import Image, ImageDraw, ImageFont
 
 class EyeTrackerCalibrator:
     def __init__(self):
@@ -15,15 +14,11 @@ class EyeTrackerCalibrator:
         self.WINDOW_HEIGHT = 720
         self.CAPTURE_FRAMES = 10
         self.SMOOTHING_FACTOR = 0.2
-        self.FLIP_FRAME = True  # Global flag to control frame flipping
+        self.FLIP_FRAME = False  # Global flag to control frame flipping
         
         # Create assets directory if it doesn't exist
         self.assets_dir = os.path.join(os.path.dirname(__file__), 'assets')
         os.makedirs(self.assets_dir, exist_ok=True)
-        
-        # Generate text image
-        self.text_image_path = os.path.join(self.assets_dir, 'text_image.png')
-        self.generate_text_image()
         
         # Boundary box for user positioning (normalized coordinates)
         self.BOUNDARY_LEFT = 0.375
@@ -409,6 +404,10 @@ class EyeTrackerCalibrator:
             ret, frame = cap.read()
             if not ret:
                 continue
+            
+            # Flip frame based on global flag
+            if not self.FLIP_FRAME:
+                frame = cv2.flip(frame, 1)
                 
             frame_resized = cv2.resize(frame, (640, 480))
             rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
@@ -718,61 +717,6 @@ class EyeTrackerCalibrator:
         df.to_csv(filename, index=False)
         print(f"Calibration data exported to {filename}")
         return filename
-
-    def generate_text_image(self):
-        """Generate and save the text image for reading analysis"""
-        text = """The benefits of pets
-
-Most pet owners are clear about the immediate joys that come with sharing their lives with companion animals. However, many of us remain unaware of the physical and mental health benefits that can also accompany the pleasure of snuggling up to a furry friend. It's only recently that studies have begun to scientifically explore the benefits of the human-animal bond.
-
-Pets have evolved to become acutely attuned to humans and our behavior and emotions. Dogs, for example, are able to understand many of the words we use, but they're even better at interpreting our tone of voice, body language, and gestures. And like any good human friend, a loyal dog will look into your eyes to gauge your emotional state and try to understand what you're thinking and feeling (and to work out when the next walk or treat might be coming, of course).
-
-Pets, especially dogs and cats, can reduce stress, anxiety, and depression, ease loneliness, encourage exercise and playfulness, and even improve your cardiovascular health. Caring for an animal can help children grow up more secure and active. Pets also provide valuable companionship for older adults. Perhaps most importantly, though, a pet can add real joy and unconditional love to your life.
-
-Any pet can improve your health
-
-While it's true that people with pets often experience greater health benefits than those without, a pet doesn't necessarily have to be a dog or cat. A rabbit could be ideal if you're allergic to other animals or have limited space but still want a furry friend to snuggle with. Birds can encourage social interaction and help keep your mind sharp if you're an older adult. Snakes, lizards, and other reptiles can make for exotic companions. Even watching fish in an aquarium can help reduce muscle tension and lower your pulse rate."""
-        
-        img = Image.new('RGB', (self.WINDOW_WIDTH, self.WINDOW_HEIGHT), 'white')
-        draw = ImageDraw.Draw(img)
-        
-        try:
-            font = ImageFont.truetype("arial.ttf", 24)
-        except:
-            font = ImageFont.load_default()
-        
-        margin = 50
-        y_position = margin
-        
-        paragraphs = text.split('\n\n')
-        for paragraph in paragraphs:
-            words = paragraph.split()
-            lines = []
-            current_line = []
-            
-            for word in words:
-                current_line.append(word)
-                text_width = draw.textlength(' '.join(current_line), font=font)
-                if text_width > self.WINDOW_WIDTH - 2*margin:
-                    current_line.pop()
-                    lines.append(' '.join(current_line))
-                    current_line = [word]
-            
-            if current_line:
-                lines.append(' '.join(current_line))
-            
-            for line in lines:
-                draw.text((margin, y_position), line, fill='black', font=font)
-                y_position += 30
-            
-            y_position += 20
-        
-        try:
-            img = img.convert('RGB')
-            img.save(self.text_image_path, 'PNG')
-            print(f"Text image saved to: {self.text_image_path}")
-        except Exception as e:
-            print(f"Error saving text image: {str(e)}")
 
     def run_calibration(self):
         """Run the complete calibration process"""
