@@ -331,8 +331,9 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
         
         try:
             while True:
-                ret, frame = cap.read()
+                ret, frame = self.calibrator.read_valid_frame(cap)
                 if not ret:
+                    print("Failed to read valid frame during prediction")
                     break
                 
                 # Flip frame based on global flag
@@ -437,6 +438,131 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                     print("⚠️  No movement data was collected during this session")
                 self.disable_movement_analysis()
     
+    def real_time_prediction_with_camera(self, cap, mode="standard"):
+        """Real-time gaze prediction with an existing camera"""
+        if self.model is None:
+            print("No model loaded. Cannot run real-time prediction.")
+            return
+        
+        print(f"--- Starting Real-Time Prediction (Mode: {mode}) ---")
+        print("Press 'q' to quit")
+        
+        window_name = 'Gaze Prediction' if mode == "standard" else 'Text Reading Analysis'
+        cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        # Load text window for text analysis mode
+        if mode == "text_analysis":
+            text_window = self.create_text_window()
+            if text_window is None:
+                print("Failed to create text window. Reverting to standard mode.")
+                mode = "standard"
+                text_window = None
+            else:
+                # ALWAYS enable movement analysis for text reading mode
+                print("📊 Automatic eye movement analysis enabled for text reading")
+                print("🔮 Enhanced Kalman filtering activated for improved accuracy")
+                self.enable_movement_analysis()
+                self.start_analysis_session()
+        else:
+            text_window = None
+        
+        # Reset smoothing
+        self.smoothed_x = None
+        self.smoothed_y = None
+        
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                
+                # Flip frame based on global flag
+                if not self.calibrator.FLIP_FRAME:
+                    frame = cv2.flip(frame, 1)
+                
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                results = self.calibrator.face_mesh.process(rgb_frame)
+                
+                # Monitor user compliance during prediction
+                if not self.calibrator.monitor_user_compliance(cap, results):
+                    print("Session aborted during real-time prediction")
+                    break
+                
+                # Create or get the appropriate window
+                if mode == "standard":
+                    window = np.zeros((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8)
+                else:
+                    window = text_window.copy()
+                
+                # Extract features and predict
+                result = self.calibrator.extract_iris_features(frame, results)
+                if result and self.model:
+                    features, (rotation_vector, translation_vector) = result
+                    
+                    # Use Kalman-enhanced prediction for text reading mode
+                    if mode == "text_analysis" and self.analysis_enabled:
+                        prediction = self.predict_gaze_point_with_kalman(features)
+                    else:
+                        prediction = self.predict_gaze_point(features)
+                    
+                    if prediction:
+                        pred_x, pred_y = prediction
+                        
+                        # Flip x-coordinate if frame is flipped to maintain mirror effect
+                        if not self.calibrator.FLIP_FRAME:
+                            pred_x = self.calibrator.WINDOW_WIDTH - pred_x
+                        
+                        # Apply smoothing
+                        smoothed_x_int, smoothed_y_int = self.apply_smoothing(pred_x, pred_y)
+                        
+                        # Add gaze point to movement analyzer if enabled
+                        if self.analysis_enabled and self.movement_analyzer:
+                            self.movement_analyzer.add_gaze_point(smoothed_x_int, smoothed_y_int)
+                        
+                        # Draw gaze point (smaller and semi-transparent in text mode)
+                        if mode == "text_analysis":
+                            # Create a separate layer for the semi-transparent dot
+                            overlay = window.copy()
+                            cv2.circle(overlay, (smoothed_x_int, smoothed_y_int), 8, (0, 0, 255), -1)
+                            cv2.addWeighted(overlay, 0.6, window, 0.4, 0, window)
+                        else:
+                            # Standard mode - larger, solid dot
+                            cv2.circle(window, (smoothed_x_int, smoothed_y_int), 15, (0, 0, 255), -1)
+                            
+                            # Draw head pose information (only in standard mode)
+                            if rotation_vector is not None and translation_vector is not None:
+                                h, w = frame.shape[:2]
+                                focal_length = w
+                                center = (w/2, h/2)
+                                camera_matrix = np.array([
+                                    [focal_length, 0, center[0]],
+                                    [0, focal_length, center[1]],
+                                    [0, 0, 1]
+                                ], dtype=np.float32)
+                                self.draw_head_pose_axis(window, rotation_vector, translation_vector, camera_matrix)
+                
+                cv2.imshow(window_name, window)
+                
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord('q'):
+                    break
+        
+        finally:
+            # Note: Don't release camera here as it's managed by main
+            cv2.destroyAllWindows()
+            
+            # Finish movement analysis session if it was active
+            if self.analysis_enabled and self.movement_analyzer:
+                print("\n🔬 Automatic eye movement analysis completed!")
+                csv_file = self.finish_analysis_session(auto_export=True)
+                if csv_file:
+                    print(f"📊 Eye movement data automatically saved to: {csv_file}")
+                    print("💡 This data is ready for model training!")
+                else:
+                    print("⚠️  No movement data was collected during this session")
+                self.disable_movement_analysis()
+
     def run_prediction(self, model_path=None, mode="standard"):
         """Run real-time prediction with specified model and mode"""
         print("=== Gaze Prediction System ===")
@@ -456,6 +582,25 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
         
         print("=== Prediction Session Complete ===")
     
+    def run_prediction_with_camera(self, cap, model_path=None, mode="standard"):
+        """Run real-time prediction with an existing camera"""
+        print("=== Gaze Prediction System ===")
+        
+        # Load model if provided
+        if model_path and model_path != self.model_path:
+            if not self.load_model(model_path):
+                print("Failed to load model. Cannot run prediction.")
+                return
+        
+        if self.model is None:
+            print("No model available. Please provide a model path or train a model first.")
+            return
+        
+        # Run real-time prediction with existing camera
+        self.real_time_prediction_with_camera(cap, mode)
+        
+        print("=== Prediction Session Complete ===")
+
     def run_prediction_with_analysis(self, model_path=None, mode="text_analysis"):
         """Run prediction with movement analysis enabled (defaults to text analysis mode)"""
         print("=== Gaze Prediction System with Movement Analysis ===")

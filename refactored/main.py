@@ -1,6 +1,7 @@
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
+import cv2
 from calibration import EyeTrackerCalibrator
 from model_training import GazeModelTrainer
 from prediction import GazePredictor
@@ -104,29 +105,46 @@ class GazeTrackingSystem:
         """Run the complete gaze tracking pipeline"""
         print("=== Full Gaze Tracking Pipeline ===")
         
-        # Step 1: Calibration
-        print("\nStep 1: Calibration")
+        # Initialize camera once at the beginning (like working script)
+        print("Initializing camera...")
         self.calibrator = EyeTrackerCalibrator()
-        csv_file = self.calibrator.run_calibration()
+        cap = None
         
-        if not csv_file:
-            print("Calibration failed. Pipeline aborted.")
-            return
-        
-        # Step 2: Model Training
-        print("\nStep 2: Model Training")
-        self.trainer = GazeModelTrainer()
-        model_path = self.trainer.train_from_csv(csv_file, create_visualizations=False)
-        
-        if not model_path:
-            print("Model training failed. Pipeline aborted.")
-            return
-        
-        # Step 3: Real-time Prediction
-        print("\nStep 3: Real-time Prediction")
-        self.predictor = GazePredictor()
-        self.predictor.run_prediction(model_path, mode=mode)
-        
+        try:
+            cap = self.calibrator.setup_camera()
+            print("Camera initialized successfully")
+            
+            # Step 1: Calibration
+            print("\nStep 1: Calibration")
+            csv_file = self.calibrator.run_calibration_with_camera(cap)
+            
+            if not csv_file:
+                print("Calibration failed. Pipeline aborted.")
+                return
+            
+            # Step 2: Model Training
+            print("\nStep 2: Model Training")
+            self.trainer = GazeModelTrainer()
+            model_path = self.trainer.train_from_csv(csv_file, create_visualizations=False)
+            
+            if not model_path:
+                print("Model training failed. Pipeline aborted.")
+                return
+            
+            # Step 3: Real-time Prediction
+            print("\nStep 3: Real-time Prediction")
+            self.predictor = GazePredictor()
+            self.predictor.run_prediction_with_camera(cap, model_path, mode=mode)
+            
+        except Exception as e:
+            print(f"Error in pipeline: {str(e)}")
+            
+        finally:
+            # Always release camera resources (like working script)
+            if cap is not None:
+                cap.release()
+            cv2.destroyAllWindows()
+            
         print("=== Full Pipeline Complete ===")
     
     def run_system(self):

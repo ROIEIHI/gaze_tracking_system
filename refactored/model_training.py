@@ -1,14 +1,33 @@
 import pandas as pd
 import numpy as np
-import xgboost as xgb
-import matplotlib.pyplot as plt
-import seaborn as sns
 import joblib
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
 from sklearn.multioutput import MultiOutputRegressor
 import datetime
 import os
+
+# Optional imports for visualizations
+try:
+    import xgboost as xgb
+    XGBOOST_AVAILABLE = True
+except ImportError:
+    XGBOOST_AVAILABLE = False
+    print("Warning: XGBoost not available. Using basic sklearn models.")
+
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_AVAILABLE = True
+except ImportError:
+    MATPLOTLIB_AVAILABLE = False
+    print("Warning: Matplotlib not available. Visualizations disabled.")
+
+try:
+    import seaborn as sns
+    SEABORN_AVAILABLE = True
+except ImportError:
+    SEABORN_AVAILABLE = False
+    print("Warning: Seaborn not available. Some visualizations disabled.")
 
 class GazeModelTrainer:
     def __init__(self):
@@ -34,6 +53,10 @@ class GazeModelTrainer:
     
     def create_visualizations(self, df):
         """Create visualizations of the calibration data"""
+        if not MATPLOTLIB_AVAILABLE:
+            print("Skipping visualizations (matplotlib not available)")
+            return
+        
         print("Creating data visualizations...")
         
         # Figure 1: Feature histograms
@@ -47,7 +70,14 @@ class GazeModelTrainer:
         # Figure 2: Correlation heatmap
         plt.figure(figsize=(10, 8))
         correlation_matrix = df.corr()
-        sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+        if SEABORN_AVAILABLE:
+            sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
+        else:
+            # Fallback visualization without seaborn
+            plt.imshow(correlation_matrix, cmap='coolwarm', aspect='auto')
+            plt.colorbar()
+            plt.xticks(range(len(correlation_matrix.columns)), correlation_matrix.columns, rotation=45)
+            plt.yticks(range(len(correlation_matrix.index)), correlation_matrix.index)
         plt.title('Correlation Matrix', fontsize=16)
         plt.tight_layout()
         plt.show()
@@ -125,14 +155,24 @@ class GazeModelTrainer:
         print(f"Test set size: {X_test.shape[0]}")
         
         # Create and train model
-        xgb_regressor = xgb.XGBRegressor(
-            n_estimators=100,
-            random_state=random_state,
-            max_depth=6,
-            learning_rate=0.1
-        )
+        if XGBOOST_AVAILABLE:
+            print("Using XGBoost regressor...")
+            base_regressor = xgb.XGBRegressor(
+                n_estimators=100,
+                random_state=random_state,
+                max_depth=6,
+                learning_rate=0.1
+            )
+        else:
+            print("Using Random Forest regressor (XGBoost not available)...")
+            from sklearn.ensemble import RandomForestRegressor
+            base_regressor = RandomForestRegressor(
+                n_estimators=100,
+                random_state=random_state,
+                max_depth=6
+            )
         
-        self.model = MultiOutputRegressor(xgb_regressor)
+        self.model = MultiOutputRegressor(base_regressor)
         
         print("Training model...")
         self.model.fit(X_train, y_train)
@@ -235,6 +275,10 @@ class GazeModelTrainer:
     
     def create_prediction_plots(self, df):
         """Create plots showing model predictions vs actual targets"""
+        if not MATPLOTLIB_AVAILABLE:
+            print("Skipping prediction plots (matplotlib not available)")
+            return
+        
         if self.model is None:
             print("No model available for prediction plots")
             return

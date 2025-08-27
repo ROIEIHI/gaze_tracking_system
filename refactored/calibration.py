@@ -135,19 +135,14 @@ class EyeTrackerCalibrator:
         )
 
     def setup_camera(self):
-        """Initialize camera with specific settings"""
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Use DirectShow API
+        """Initialize camera with simple, reliable settings"""
+        cap = cv2.VideoCapture(0)  # Use default API (no DirectShow)
         if not cap.isOpened():
             raise Exception("Could not open camera")
         
-        # Set camera properties for consistent orientation and performance
+        # Set only essential camera properties (like working script)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.WINDOW_WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.WINDOW_HEIGHT)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1.0)
-        cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # Disable autofocus
-        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # Disable auto exposure
         
         return cap
 
@@ -739,6 +734,34 @@ class EyeTrackerCalibrator:
             filename = self.export_calibration_data()
             
             cap.release()
+            cv2.destroyAllWindows()
+            
+            print("=== Calibration Complete ===")
+            return filename
+            
+        except Exception as e:
+            print(f"Error during calibration: {str(e)}")
+            return None
+
+    def run_calibration_with_camera(self, cap):
+        """Run the complete calibration process with an existing camera"""
+        print("=== Eye Tracking Calibration ===")
+        
+        try:
+            # User positioning phase
+            if not self.user_positioning_phase(cap):
+                print("Calibration cancelled during positioning phase")
+                return None
+            
+            # Calibration process
+            if not self.calibration_process(cap):
+                print("Calibration cancelled during calibration phase")
+                return None
+            
+            # Export data
+            filename = self.export_calibration_data()
+            
+            # Note: Don't release camera here as it's managed by main
             cv2.destroyAllWindows()
             
             print("=== Calibration Complete ===")
