@@ -152,8 +152,48 @@ class GazeTrackingSystem:
 def main():
     """Main application entry point"""
     try:
-        system = GazeTrackingSystem()
-        system.run_system()
+        import sys
+        
+        # Check for command line arguments
+        if len(sys.argv) > 1:
+            mode_arg = sys.argv[1]
+            system = GazeTrackingSystem()
+            
+            # Handle command line modes
+            if mode_arg == "1":
+                print("Running Standard Mode (Full Pipeline)")
+                system.run_full_pipeline(mode="standard")
+            elif mode_arg == "2":
+                print("Running Text Analysis Mode (Full Pipeline)")
+                system.run_full_pipeline(mode="text_analysis")
+            elif mode_arg == "3":
+                print("Running Prediction Only Mode")
+                # For prediction-only mode, load the latest model
+                models_dir = os.path.join(os.path.dirname(__file__), 'models')
+                if os.path.exists(models_dir):
+                    model_files = [f for f in os.listdir(models_dir) if f.startswith('gaze_model_') and f.endswith('.joblib')]
+                    if model_files:
+                        latest_model = sorted(model_files)[-1]
+                        model_path = os.path.join(models_dir, latest_model)
+                        print(f"Loading latest model: {latest_model}")
+                        
+                        predictor = GazePredictor()
+                        predictor.run_prediction(model_path, mode="standard")
+                    else:
+                        print("No trained models found. Please run calibration and training first.")
+                else:
+                    print("Models directory not found. Please run calibration and training first.")
+            else:
+                print(f"Unknown mode: {mode_arg}")
+                print("Usage: python main.py [1|2|3]")
+                print("  1: Standard Mode")
+                print("  2: Text Analysis Mode") 
+                print("  3: Prediction Only")
+        else:
+            # GUI mode selection if no command line arguments
+            system = GazeTrackingSystem()
+            system.run_system()
+            
     except KeyboardInterrupt:
         print("\nApplication interrupted by user.")
     except Exception as e:

@@ -6,6 +6,14 @@ import time
 import datetime
 import math
 import os
+import sys
+
+try:
+    from gazetr_model import GazeTRPredictor
+    GAZETR_AVAILABLE = True
+except ImportError:
+    print("GazeTR model not available.")
+    GAZETR_AVAILABLE = False
 
 class EyeTrackerCalibrator:
     def __init__(self):
@@ -26,15 +34,20 @@ class EyeTrackerCalibrator:
         self.BOUNDARY_TOP = 0.3
         self.BOUNDARY_BOTTOM = 0.7
         
-        # Initialize MediaPipe
-        self.mp_face_mesh = mp.solutions.face_mesh
-        self.face_mesh = self.mp_face_mesh.FaceMesh(
-            max_num_faces=1,
-            refine_landmarks=True,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        )
-        self.mp_drawing = mp.solutions.drawing_utils
+        # Initialize MediaPipe with better error handling
+        try:
+            self.mp_face_mesh = mp.solutions.face_mesh
+            self.face_mesh = self.mp_face_mesh.FaceMesh(
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5
+            )
+            self.mp_drawing = mp.solutions.drawing_utils
+            print("MediaPipe initialized successfully")
+        except Exception as e:
+            print(f"Error initializing MediaPipe: {e}")
+            raise
         
         # Data storage
         self.calibration_data = []
@@ -50,7 +63,26 @@ class EyeTrackerCalibrator:
         self.is_currently_in_boundary = False
         self.boundary_exit_timestamp = None
         self.boundary_entry_timestamp = None
-        
+
+        # Initialize GazeTR model if available
+        self.gazetr_predictor = None
+        if GAZETR_AVAILABLE:
+            try:
+                # Try project root models directory first
+                model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 
+                                        'models', 'GazeTR-H-ETH.pt')
+                if not os.path.exists(model_path):
+                    # Try local models directory
+                    model_path = os.path.join(os.path.dirname(__file__), 
+                                            'models', 'GazeTR-H-ETH.pt')
+                
+                print(f"Looking for GazeTR model at: {model_path}")
+                self.gazetr_predictor = GazeTRPredictor(model_path=model_path)
+                print("GazeTR model initialized successfully")
+            except Exception as e:
+                print(f"Error initializing GazeTR model: {e}")
+                print("Running without GazeTR predictions")
+
     def _setup_calibration_targets(self):
         """Setup calibration targets - Comprehensive 21-point calibration"""
         # Screen dimensions for calculations
@@ -135,20 +167,19 @@ class EyeTrackerCalibrator:
         )
 
     def setup_camera(self):
-        """Initialize camera with specific settings"""
-        cap = cv2.VideoCapture(0, cv2.CAP_DSHOW)  # Use DirectShow API
-        if not cap.isOpened():
-            raise Exception("Could not open camera")
+        """Initialize camera with simple settings like in working 2D_eyeonly.py"""
+        print("Setting up camera...")
         
-        # Set camera properties for consistent orientation and performance
+        # Simple camera initialization like in 2D_eyeonly.py
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            raise Exception("Error: Could not open camera")
+        
+        # Set camera properties to match 2D_eyeonly.py
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.WINDOW_WIDTH)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.WINDOW_HEIGHT)
-        cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*'MJPG'))
-        cap.set(cv2.CAP_PROP_CONVERT_RGB, 1.0)
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1.0)
-        cap.set(cv2.CAP_PROP_AUTOFOCUS, 0)  # Disable autofocus
-        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.75)  # Disable auto exposure
         
+        print("Camera initialized successfully")
         return cap
 
     def extract_iris_features(self, image, landmarks):
@@ -221,10 +252,18 @@ class EyeTrackerCalibrator:
         if yaw is None:
             yaw, pitch, roll = 0.0, 0.0, 0.0
             rotation_vector, translation_vector = None, None
+
+        # Get GazeTR predictions
+        x_gaze_vect, y_gaze_vect, z_gaze_vect = self.get_gazetr_predictions(image, landmarks)
+        
+        # Debug: Check if we're getting GazeTR predictions
+        # Debug print removed
         
         # Return features for model and visualization data
-        features = [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll]
+        features = [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll, x_gaze_vect, y_gaze_vect, z_gaze_vect]
         visualization_data = (rotation_vector, translation_vector)
+
+        # Debug prints removed for production
         
         return features, visualization_data
 
@@ -306,47 +345,55 @@ class EyeTrackerCalibrator:
 
     def is_face_in_boundary(self, landmarks, image_width, image_height):
         """Check if face bounding box is completely within the positioning boundary"""
-        face_box = self.calculate_face_bounding_box(landmarks)
-        
-        if face_box is None:
+        try:
+            face_box = self.calculate_face_bounding_box(landmarks)
+            
+            if face_box is None:
+                return False
+            
+            return (face_box['left'] >= self.BOUNDARY_LEFT and 
+                    face_box['right'] <= self.BOUNDARY_RIGHT and
+                    face_box['top'] >= self.BOUNDARY_TOP and 
+                    face_box['bottom'] <= self.BOUNDARY_BOTTOM)
+        except Exception as e:
+            print(f"Error in is_face_in_boundary: {e}")
             return False
-        
-        return (face_box['left'] >= self.BOUNDARY_LEFT and 
-                face_box['right'] <= self.BOUNDARY_RIGHT and
-                face_box['top'] >= self.BOUNDARY_TOP and 
-                face_box['bottom'] <= self.BOUNDARY_BOTTOM)
 
     def calculate_face_bounding_box(self, landmarks):
         """Calculate the actual bounding box of the user's face"""
-        if not landmarks.multi_face_landmarks:
-            return None
+        try:
+            if not landmarks or not hasattr(landmarks, 'multi_face_landmarks') or not landmarks.multi_face_landmarks:
+                return None
+                
+            face_landmarks = landmarks.multi_face_landmarks[0]
             
-        face_landmarks = landmarks.multi_face_landmarks[0]
-        
-        face_boundary_landmarks = [
-            10, 151, 9, 175,    # Top of forehead/face
-            234, 454, 132, 361,  # Left and right face boundaries  
-            172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323
-        ]
-        
-        face_x_coords = []
-        face_y_coords = []
-        
-        for idx in face_boundary_landmarks:
-            if idx < len(face_landmarks.landmark):
-                landmark = face_landmarks.landmark[idx]
-                face_x_coords.append(landmark.x)
-                face_y_coords.append(landmark.y)
-        
-        if not face_x_coords or not face_y_coords:
+            face_boundary_landmarks = [
+                10, 151, 9, 175,    # Top of forehead/face
+                234, 454, 132, 361,  # Left and right face boundaries  
+                172, 136, 150, 149, 176, 148, 152, 377, 400, 378, 379, 365, 397, 288, 361, 323
+            ]
+            
+            face_x_coords = []
+            face_y_coords = []
+            
+            for idx in face_boundary_landmarks:
+                if idx < len(face_landmarks.landmark):
+                    landmark = face_landmarks.landmark[idx]
+                    face_x_coords.append(landmark.x)
+                    face_y_coords.append(landmark.y)
+            
+            if not face_x_coords or not face_y_coords:
+                return None
+            
+            return {
+                'left': min(face_x_coords),
+                'right': max(face_x_coords),
+                'top': min(face_y_coords),
+                'bottom': max(face_y_coords)
+            }
+        except Exception as e:
+            print(f"Error in calculate_face_bounding_box: {e}")
             return None
-        
-        return {
-            'left': min(face_x_coords),
-            'right': max(face_x_coords),
-            'top': min(face_y_coords),
-            'bottom': max(face_y_coords)
-        }
 
     def check_face_detection_quality(self, landmarks):
         """Check if face detection meets quality threshold"""
@@ -493,103 +540,202 @@ class EyeTrackerCalibrator:
 
     def draw_face_bounding_box(self, image, landmarks, color=(0, 255, 255)):
         """Draw the actual face bounding box for visualization"""
-        face_box = self.calculate_face_bounding_box(landmarks)
-        
-        if face_box is None:
-            return
+        try:
+            face_box = self.calculate_face_bounding_box(landmarks)
             
-        h, w = image.shape[:2]
-        
-        left_px = int(face_box['left'] * w)
-        right_px = int(face_box['right'] * w)
-        top_px = int(face_box['top'] * h)
-        bottom_px = int(face_box['bottom'] * h)
-        
-        cv2.rectangle(image, (left_px, top_px), (right_px, bottom_px), color, 2)
-        cv2.putText(image, "Your Face", (left_px, top_px - 10), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+            if face_box is None:
+                return
+                
+            h, w = image.shape[:2]
+            
+            left_px = int(face_box['left'] * w)
+            right_px = int(face_box['right'] * w)
+            top_px = int(face_box['top'] * h)
+            bottom_px = int(face_box['bottom'] * h)
+            
+            cv2.rectangle(image, (left_px, top_px), (right_px, bottom_px), color, 2)
+            cv2.putText(image, "Your Face", (left_px, top_px - 10), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
+        except Exception as e:
+            print(f"Error drawing face bounding box: {e}")
 
     def user_positioning_phase(self, cap):
-        """Guide user to correct positioning with hysteresis"""
-        cv2.namedWindow('User Positioning', cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty('User Positioning', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        """Guide user to correct positioning with optimized display"""
+        print("Starting user positioning phase...")
         
-        print("--- User Positioning Phase ---")
-        print("Position your yellow face box completely within the boundary box and press ENTER")
-        
-        # Reset hysteresis state
-        self.is_currently_in_boundary = False
-        self.boundary_exit_timestamp = None
-        self.boundary_entry_timestamp = None
-        
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
+        try:
+            # Use smaller window to prevent display issues
+            cv2.namedWindow('User Positioning', cv2.WINDOW_NORMAL)
+            cv2.resizeWindow('User Positioning', 480, 360)  # Even smaller for stability
+            
+            print("--- User Positioning Phase ---")
+            print("Position your face within the boundary box and press ENTER")
+            print("Press 's' to skip MediaPipe, 'q' to quit")
+            
+            # Reset state
+            self.is_currently_in_boundary = False
+            self.boundary_exit_timestamp = None
+            self.boundary_entry_timestamp = None
+            
+            frame_count = 0
+            skip_mediapipe = False
+            last_successful_mediapipe = 0
+            last_display_time = time.time()
+            display_interval = 0.033  # ~30 FPS max display rate
+            
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    print("Error: Failed to read frame from camera")
+                    break
                 
-            # Flip frame based on global flag
-            if not self.FLIP_FRAME:
-                frame = cv2.flip(frame, 1)
-            frame_resized = cv2.resize(frame, (self.WINDOW_WIDTH, self.WINDOW_HEIGHT))
-            
-            rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
-            results = self.face_mesh.process(rgb_frame)
-            
-            # Apply boundary logic with hysteresis
-            is_geometrically_in = self.is_face_in_boundary(results, self.WINDOW_WIDTH, self.WINDOW_HEIGHT)
-            current_time = time.time()
-            
-            if is_geometrically_in:
-                if self.boundary_exit_timestamp is not None:
-                    self.boundary_entry_timestamp = current_time
-                elif self.boundary_entry_timestamp is None:
-                    self.boundary_entry_timestamp = current_time
+                frame_count += 1
+                current_time = time.time()
                 
-                self.is_currently_in_boundary = True
-                self.boundary_exit_timestamp = None
-            else:
-                self.boundary_entry_timestamp = None
-                if self.boundary_exit_timestamp is None:
-                    self.boundary_exit_timestamp = current_time
-                elif current_time - self.boundary_exit_timestamp >= 0.25:
-                    self.is_currently_in_boundary = False
-            
-            # Determine UI status
-            if is_geometrically_in:
-                is_positioned_for_ui = True
-            elif self.boundary_exit_timestamp is not None and current_time - self.boundary_exit_timestamp < 0.25:
-                is_positioned_for_ui = True
-            else:
-                is_positioned_for_ui = False
-            
-            # Check if can proceed
-            can_proceed = False
-            if is_positioned_for_ui and self.boundary_entry_timestamp is not None:
-                time_in_boundary = current_time - self.boundary_entry_timestamp
-                can_proceed = time_in_boundary >= 1.0
-            
-            # Draw UI elements
-            self.draw_boundary_box(frame_resized, is_positioned_for_ui, can_proceed)
-            self.draw_face_bounding_box(frame_resized, results, color=(0, 255, 255))
-            
-            if results.multi_face_landmarks:
-                for face_landmarks in results.multi_face_landmarks:
-                    self.mp_drawing.draw_landmarks(
-                        frame_resized, face_landmarks, self.mp_face_mesh.FACEMESH_IRISES,
-                        landmark_drawing_spec=None,
-                        connection_drawing_spec=self.mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=1)
-                    )
-            
-            cv2.imshow('User Positioning', frame_resized)
-            
-            key = cv2.waitKey(1) & 0xFF
-            if key == 13 and can_proceed:  # Enter key
-                break
-            elif key == 27:  # Escape key
-                cv2.destroyAllWindows()
-                return False
+                # Flip and resize frame immediately
+                if not self.FLIP_FRAME:
+                    frame = cv2.flip(frame, 1)
+                frame_resized = cv2.resize(frame, (480, 360))
                 
-        cv2.destroyAllWindows()
+                # MediaPipe processing (only if not skipped)
+                results = None
+                is_geometrically_in = False
+                
+                if not skip_mediapipe and (frame_count - last_successful_mediapipe) < 100:
+                    try:
+                        rgb_frame = cv2.cvtColor(frame_resized, cv2.COLOR_BGR2RGB)
+                        results = self.face_mesh.process(rgb_frame)
+                        last_successful_mediapipe = frame_count
+                        
+                        if results and results.multi_face_landmarks:
+                            is_geometrically_in = self.is_face_in_boundary(results, 480, 360)
+                            
+                    except Exception as e:
+                        if frame_count % 30 == 0:  # Print error every 30 frames
+                            print(f"MediaPipe error: {e}")
+                        results = None
+                        
+                        if frame_count - last_successful_mediapipe > 50:
+                            print("Switching to manual mode due to MediaPipe errors")
+                            skip_mediapipe = True
+                
+                # Create dummy results if needed
+                if results is None:
+                    results = type('obj', (object,), {'multi_face_landmarks': None})()
+                
+                # Boundary logic
+                if is_geometrically_in:
+                    if self.boundary_exit_timestamp is not None:
+                        self.boundary_entry_timestamp = current_time
+                    elif self.boundary_entry_timestamp is None:
+                        self.boundary_entry_timestamp = current_time
+                    
+                    self.is_currently_in_boundary = True
+                    self.boundary_exit_timestamp = None
+                else:
+                    self.boundary_entry_timestamp = None
+                    if self.boundary_exit_timestamp is None:
+                        self.boundary_exit_timestamp = current_time
+                    elif current_time - self.boundary_exit_timestamp >= 0.25:
+                        self.is_currently_in_boundary = False
+                
+                # UI status
+                if is_geometrically_in:
+                    is_positioned_for_ui = True
+                elif self.boundary_exit_timestamp is not None and current_time - self.boundary_exit_timestamp < 0.25:
+                    is_positioned_for_ui = True
+                else:
+                    is_positioned_for_ui = False
+                
+                # Can proceed check
+                can_proceed = False
+                if skip_mediapipe:
+                    can_proceed = frame_count > 60  # 2 seconds in manual mode
+                elif is_positioned_for_ui and self.boundary_entry_timestamp is not None:
+                    time_in_boundary = current_time - self.boundary_entry_timestamp
+                    can_proceed = time_in_boundary >= 1.0
+                
+                # Display update (throttled for performance)
+                if current_time - last_display_time >= display_interval:
+                    try:
+                        # Draw UI elements
+                        h, w = frame_resized.shape[:2]
+                        left = int(0.375 * w)
+                        right = int(0.625 * w)
+                        top = int(0.3 * h)
+                        bottom = int(0.7 * h)
+                        
+                        # Choose color and text
+                        if skip_mediapipe:
+                            color = (0, 255, 255)  # Yellow for manual mode
+                            text = "Manual Mode - Press ENTER when ready"
+                        elif is_positioned_for_ui and can_proceed:
+                            color = (0, 255, 0)  # Green
+                            text = "Perfect! Press ENTER to continue"
+                        elif is_positioned_for_ui and not can_proceed:
+                            color = (0, 255, 255)  # Yellow
+                            text = "Hold position for 1 second..."
+                        else:
+                            color = (0, 0, 255)  # Red
+                            text = "Position face in boundary"
+                        
+                        # Draw boundary box
+                        cv2.rectangle(frame_resized, (left, top), (right, bottom), color, 2)
+                        cv2.putText(frame_resized, text, (5, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+                        
+                        # Draw face status
+                        if not skip_mediapipe:
+                            face_status = "Face: OK" if (results and results.multi_face_landmarks) else "Face: None"
+                            cv2.putText(frame_resized, face_status, (5, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+                        
+                        # Draw minimal landmarks for feedback
+                        if not skip_mediapipe and results and results.multi_face_landmarks:
+                            try:
+                                face_landmarks = results.multi_face_landmarks[0]
+                                for idx in [468, 473]:  # Just iris centers
+                                    if idx < len(face_landmarks.landmark):
+                                        landmark = face_landmarks.landmark[idx]
+                                        x = int(landmark.x * w)
+                                        y = int(landmark.y * h)
+                                        cv2.circle(frame_resized, (x, y), 2, (0, 255, 0), -1)
+                            except:
+                                pass
+                        
+                        # Critical: Use immediate display with minimal wait
+                        cv2.imshow('User Positioning', frame_resized)
+                        last_display_time = current_time
+                        
+                    except Exception as e:
+                        print(f"Display error: {e}")
+                        break
+                
+                # Handle input with very short timeout
+                key = cv2.waitKey(1) & 0xFF
+                if key == 13 and can_proceed:  # Enter
+                    print("User positioning confirmed")
+                    return True
+                elif key == 27:  # Escape
+                    print("User cancelled")
+                    return False
+                elif key == ord('s'):  # Skip MediaPipe
+                    skip_mediapipe = not skip_mediapipe
+                    print(f"MediaPipe {'disabled' if skip_mediapipe else 'enabled'}")
+                elif key == ord('q'):  # Quit
+                    return False
+                
+                # Timeout check
+                if frame_count > 1800:  # 60 seconds at 30 FPS
+                    print("Timeout reached")
+                    break
+                    
+        except Exception as e:
+            print(f"Error in positioning phase: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+        finally:
+            cv2.destroyAllWindows()
+            
         return True
 
     def mouse_callback(self, event, x, y, flags, param):
@@ -708,7 +854,10 @@ class EyeTrackerCalibrator:
             return None
         
         df = pd.DataFrame(self.calibration_data, 
-                         columns=['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll', 'target_x', 'target_y'])
+                        columns=['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 
+                                'yaw', 'pitch', 'roll', 
+                                'x_gaze_vect', 'y_gaze_vect', 'z_gaze_vect', 
+                                'target_x', 'target_y'])
         
         if filename is None:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -716,12 +865,15 @@ class EyeTrackerCalibrator:
         
         df.to_csv(filename, index=False)
         print(f"Calibration data exported to {filename}")
+        print(f"Data shape: {df.shape}")
+        print(f"Features include: {', '.join(df.columns[:-2])}")
         return filename
 
     def run_calibration(self):
         """Run the complete calibration process"""
         print("=== Eye Tracking Calibration ===")
         
+        cap = None
         try:
             cap = self.setup_camera()
             
@@ -738,12 +890,66 @@ class EyeTrackerCalibrator:
             # Export data
             filename = self.export_calibration_data()
             
-            cap.release()
-            cv2.destroyAllWindows()
-            
             print("=== Calibration Complete ===")
             return filename
             
         except Exception as e:
             print(f"Error during calibration: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
+        finally:
+            # Ensure camera is always released
+            if cap is not None:
+                cap.release()
+            cv2.destroyAllWindows()
+
+    def get_gazetr_predictions(self, image, landmarks):
+        """Extract 3D gaze vector predictions from GazeTR model"""
+        if self.gazetr_predictor is None or not landmarks.multi_face_landmarks:
+            return 0.0, 0.0, 0.0  # Default values when model or face not available
+            
+        try:
+            # Extract face region for GazeTR
+            face_box = self.calculate_face_bounding_box(landmarks)
+            if face_box is None:
+                return 0.0, 0.0, 0.0
+                
+            h, w = image.shape[:2]
+            
+            # Get bounding box with margin
+            left = max(0, int(face_box['left'] * w) - 20)
+            right = min(w, int(face_box['right'] * w) + 20)
+            top = max(0, int(face_box['top'] * h) - 20)
+            bottom = min(h, int(face_box['bottom'] * h) + 20)
+            
+            # Extract face image
+            if left >= right or top >= bottom:
+                return 0.0, 0.0, 0.0
+                
+            face_image = image[top:bottom, left:right]
+            
+            # Check if face image is valid
+            if face_image.size == 0 or face_image.shape[0] < 10 or face_image.shape[1] < 10:
+                return 0.0, 0.0, 0.0
+            
+            # Get prediction from GazeTR
+            gaze_vector = self.gazetr_predictor.predict(face_image)
+            
+            # Check if prediction is valid
+            if gaze_vector is not None and len(gaze_vector) >= 2:
+                # GazeTR output might be 2D or 3D, handle both cases
+                x_gaze_vect = float(gaze_vector[0])
+                y_gaze_vect = float(gaze_vector[1])
+                z_gaze_vect = float(gaze_vector[2]) if len(gaze_vector) >= 3 else 0.0
+                
+                # Additional validation to ensure values are reasonable
+                if not (np.isfinite(x_gaze_vect) and np.isfinite(y_gaze_vect) and np.isfinite(z_gaze_vect)):
+                    return 0.0, 0.0, 0.0
+                    
+                return x_gaze_vect, y_gaze_vect, z_gaze_vect
+            else:
+                return 0.0, 0.0, 0.0
+        except Exception as e:
+            print(f"Error getting GazeTR predictions: {e}")
+            return 0.0, 0.0, 0.0

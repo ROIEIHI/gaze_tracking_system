@@ -9,10 +9,21 @@ from eye_movement_analyzer import EyeMovementAnalyzer
 class GazePredictor:
     def __init__(self, model_path=None):
         # Initialize the calibrator for feature extraction
+        # (GazeTR will be automatically initialized in the calibrator's __init__ method)
         self.calibrator = EyeTrackerCalibrator()
+        
+        # Check if GazeTR was successfully initialized
+        if self.calibrator.gazetr_predictor is not None:
+            print("GazeTR model initialized successfully")
+        else:
+            print("Warning: GazeTR initialization failed")
+            print("Will proceed with 7-feature mode instead of 10-feature mode")
+        
+        # Production mode - debug disabled
         
         # Prediction-specific attributes
         self.model = None
+        self.scaler = None  # For StandardScaler normalization
         self.model_path = model_path
         self.smoothed_x = None
         self.smoothed_y = None
@@ -26,18 +37,38 @@ class GazePredictor:
             self.load_model(model_path)
     
     def load_model(self, model_path):
-        """Load a trained model from file"""
+        """Load a trained model and scaler from file"""
         try:
             model_data = joblib.load(model_path)
             self.model = model_data['model']
+            self.scaler = model_data.get('scaler', None)  # Load StandardScaler if available
             self.model_path = model_path
+            
             print(f"Model loaded from: {model_path}")
+            
+            # Check model version and capabilities
+            model_version = model_data.get('model_version', '1.0')
+            print(f"Model version: {model_version}")
+            
+            if self.scaler is not None:
+                print("✅ StandardScaler loaded - feature normalization enabled")
+            else:
+                print("⚠️  No scaler found - using raw features (older model)")
             
             # Print model info if available
             training_history = model_data.get('training_history', {})
             if training_history:
                 test_error = training_history.get('test_mean_error', 'N/A')
+                grid_search_used = training_history.get('grid_search_used', False)
                 print(f"Model test error: {test_error:.2f} pixels" if isinstance(test_error, float) else f"Model test error: {test_error}")
+                print(f"GridSearchCV optimization: {'✅ Yes' if grid_search_used else '❌ No'}")
+                
+                # Print best parameters if available
+                best_params = model_data.get('best_params', {})
+                if best_params:
+                    print("Optimized parameters:")
+                    for param, value in best_params.items():
+                        print(f"  {param}: {value}")
             
             return True
             
@@ -82,9 +113,26 @@ class GazePredictor:
             return None
         
         try:
-            # Use only the first 7 features (normalized iris positions + head pose)
-            prediction = self.model.predict([features[:7]])[0]
+            # Check if we have the correct number of features
+            expected_features = 10  # Updated to use all 10 features including GazeTR
+            if len(features) != expected_features:
+                print(f"Error during prediction: Feature shape mismatch, expected: {expected_features}, got {len(features)}")
+                return None
+            
+            # Convert features to numpy array for processing
+            features_array = np.array(features).reshape(1, -1)
+            
+            # Apply StandardScaler normalization if scaler is available
+            if self.scaler is not None:
+                features_scaled = self.scaler.transform(features_array)
+            else:
+                # Fallback to raw features for older models
+                features_scaled = features_array
+            
+            # Make prediction using normalized features
+            prediction = self.model.predict(features_scaled)[0]
             return int(prediction[0]), int(prediction[1])
+            
         except Exception as e:
             print(f"Error during prediction: {str(e)}")
             return None
