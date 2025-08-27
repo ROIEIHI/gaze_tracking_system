@@ -232,17 +232,18 @@ class EyeTrackerCalibrator:
         h, w = image.shape[:2]
         
         # Define 3D model points for stable facial landmarks
+        # Using realistic anthropometric measurements for adult head (in mm)
         model_points = np.array([
-            (0.0, 0.0, 0.0),         # Nose tip (30)
-            (0.0, -330.0, -65.0),    # Chin (152)
-            (-225.0, 170.0, -135.0), # Left eye left corner (33)
-            (225.0, 170.0, -135.0),  # Right eye right corner (362)
-            (-150.0, -150.0, -125.0),# Left mouth corner (61)
-            (150.0, -150.0, -125.0)  # Right mouth corner (291)
-        ], dtype=np.float32)
+            (0.0, 0.0, 0.0),        # Nose tip (1) - reference point
+            (0.0, -70.0, -65.0),    # Chin (152) - 70mm below nose, 65mm back
+            (-35.0, 15.0, -15.0),   # Left eye inner corner (33) - 35mm left, 15mm up, 15mm back
+            (35.0, 15.0, -15.0),    # Right eye inner corner (362) - 35mm right, 15mm up, 15mm back
+            (-25.0, -25.0, -10.0),  # Left mouth corner (61) - 25mm left, 25mm down, 10mm back
+            (25.0, -25.0, -10.0)    # Right mouth corner (291) - 25mm right, 25mm down, 10mm back
+        ], dtype=np.float64)
         
-        # Get corresponding 2D image points
-        landmark_indices = [30, 152, 33, 362, 61, 291]
+        # Get corresponding 2D image points - CORRECTED nose tip index
+        landmark_indices = [1, 152, 33, 362, 61, 291]  # nose tip, chin, eye corners, mouth corners
         image_points = []
         
         for idx in landmark_indices:
@@ -253,16 +254,16 @@ class EyeTrackerCalibrator:
         if len(image_points) != 6:
             return None, None, None, None, None
             
-        image_points = np.array(image_points, dtype=np.float32)
+        image_points = np.array(image_points, dtype=np.float64)
         
-        # Camera matrix estimation
-        focal_length = w
+        # Camera matrix estimation with proper focal length
+        focal_length = w * 0.7  # More accurate focal length approximation
         center = (w/2, h/2)
         camera_matrix = np.array([
             [focal_length, 0, center[0]],
             [0, focal_length, center[1]],
             [0, 0, 1]
-        ], dtype=np.float32)
+        ], dtype=np.float64)
         
         # Distortion coefficients
         dist_coeffs = np.zeros((4, 1))
@@ -292,10 +293,17 @@ class EyeTrackerCalibrator:
             y = np.arctan2(-rotation_matrix[2, 0], sy)
             z = 0
         
-        # Convert to degrees and normalize
-        pitch = np.clip(x * 180.0 / np.pi, -90, 90) / 90.0
-        yaw = np.clip(y * 180.0 / np.pi, -90, 90) / 90.0
-        roll = np.clip(z * 180.0 / np.pi, -45, 45) / 45.0
+        # Convert to degrees and normalize 
+        # Note: x=roll, y=pitch, z=yaw based on Tait-Bryan X-Y-Z convention
+        roll_deg = x * 180.0 / np.pi
+        pitch_deg = y * 180.0 / np.pi  
+        yaw_deg = z * 180.0 / np.pi
+        
+        # Normalize to [-1, 1] range with wide ranges to handle Euler angle discontinuities
+        # The raw angles can jump to ±180° due to Euler angle limitations
+        pitch = np.clip(pitch_deg, -45, 45) / 45.0      # Pitch: ±45° for head up/down
+        yaw = np.clip(yaw_deg, -180, 180) / 180.0       # Yaw: ±180° to handle discontinuity
+        roll = np.clip(roll_deg, -180, 180) / 180.0     # Roll: ±180° to handle discontinuity
         
         return yaw, pitch, roll, rotation_vector, translation_vector
 
