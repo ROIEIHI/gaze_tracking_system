@@ -138,6 +138,14 @@ class EyeMovementAnalyzer:
         self.estimated_words_per_line = 12  # Approximate words per line
         self.estimated_lines_read = 0
         
+        # Text reading specific variables for detailed analysis
+        self.text_content = None  # Store current page text for word detection
+        self.word_positions = []  # Store word positions for mapping fixations to words
+        self.blink_count = 0
+        self.last_blink_time = 0
+        self.pupil_size_history = deque(maxlen=100)  # Store recent pupil sizes
+        self.text_onset_time = None  # Time when text was first displayed
+        
     def add_gaze_point(self, x: float, y: float) -> GazePoint:
         """Add new gaze point and analyze movement"""
         current_time = time.time()
@@ -370,6 +378,172 @@ class EyeMovementAnalyzer:
         }
         
         return summary
+    
+    def set_text_content(self, text_content: str, text_start_x: int, text_start_y: int, 
+                        text_width: int, line_spacing: int = 35, font_scale: float = 0.6):
+        """Set the current text content and calculate word positions for fixation mapping"""
+        import cv2
+        
+        self.text_content = text_content
+        self.word_positions = []
+        self.text_onset_time = time.time()
+        
+        # Calculate approximate word positions based on text layout
+        words = text_content.split()
+        current_line = ""
+        y = text_start_y
+        line_number = 0
+        
+        font = cv2.FONT_HERSHEY_DUPLEX
+        thickness = 1
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            text_size = cv2.getTextSize(test_line, font, font_scale, thickness)[0]
+            
+            if text_size[0] <= text_width:
+                current_line = test_line
+            else:
+                # Start new line
+                if current_line:
+                    line_number += 1
+                    y += line_spacing
+                current_line = word
+            
+            # Calculate word position
+            current_line_size = cv2.getTextSize(current_line, font, font_scale, thickness)[0]
+            word_size = cv2.getTextSize(word, font, font_scale, thickness)[0]
+            
+            # Approximate word center position
+            line_x = text_start_x + (text_width - current_line_size[0]) // 2
+            word_start_in_line = current_line.rfind(word)
+            chars_before_word = current_line[:word_start_in_line]
+            chars_before_size = cv2.getTextSize(chars_before_word, font, font_scale, thickness)[0]
+            
+            word_x = line_x + chars_before_size[0] + word_size[0] // 2
+            word_y = y
+            
+            self.word_positions.append({
+                'word': word,
+                'x': word_x,
+                'y': word_y,
+                'line': line_number,
+                'width': word_size[0],
+                'height': word_size[1]
+            })
+    
+    def get_fixated_word(self, fixation_x: float, fixation_y: float) -> str:
+        """Determine which word is being fixated based on gaze position"""
+        if not self.word_positions:
+            return "Unknown"
+        
+        # Find closest word to fixation point
+        min_distance = float('inf')
+        closest_word = "Unknown"
+        
+        for word_info in self.word_positions:
+            # Calculate distance from fixation to word center
+            distance = math.sqrt((fixation_x - word_info['x'])**2 + (fixation_y - word_info['y'])**2)
+            
+            # Consider word as "fixated" if within reasonable distance
+            word_threshold = max(word_info['width'], word_info['height']) * 0.8
+            if distance < word_threshold and distance < min_distance:
+                min_distance = distance
+                closest_word = word_info['word']
+        
+        return closest_word
+    
+    def add_pupil_size(self, pupil_size: float):
+        """Add pupil size measurement for analysis"""
+        self.pupil_size_history.append(pupil_size)
+    
+    def record_blink(self):
+        """Record a blink event"""
+        current_time = time.time()
+        self.blink_count += 1
+        self.last_blink_time = current_time
+    
+    def get_blink_frequency(self) -> float:
+        """Calculate blink frequency (blinks per minute)"""
+        if not self.text_onset_time:
+            return 0.0
+        
+        session_duration = time.time() - self.text_onset_time
+        if session_duration > 0:
+            return (self.blink_count / session_duration) * 60  # blinks per minute
+        return 0.0
+    
+    def get_average_pupil_size(self) -> float:
+        """Get average pupil size from recent measurements"""
+        if not self.pupil_size_history:
+            return 0.0
+        return sum(self.pupil_size_history) / len(self.pupil_size_history)
+    
+    def export_text_reading_csv(self, filename: str = None):
+        """Export text reading specific CSV with fixation-level data"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        # Generate filename if not provided
+        if filename is None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"eye_movement_data_{timestamp}.csv"
+        
+        # Ensure CSV extension
+        if not filename.endswith('.csv'):
+            filename += '.csv'
+        
+        # Create data directory if it doesn't exist
+        data_dir = "movement_data"
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+        
+        full_path = os.path.join(data_dir, filename)
+        
+        # Prepare fixation-level data
+        csv_data = []
+        
+        for i, fixation in enumerate(self.fixations):
+            # Get the word being fixated
+            fixated_word = self.get_fixated_word(fixation['x'], fixation['y'])
+            
+            # Calculate time from stimulus onset
+            time_from_onset = 0
+            if self.text_onset_time:
+                time_from_onset = fixation['start_time'] - self.text_onset_time
+            
+            csv_row = {
+                'Fixation_Order': i + 1,
+                'Fixated_Word': fixated_word,
+                'Fixation_X_Screen': round(fixation['x'], 2),
+                'Fixation_Y_Screen': round(fixation['y'], 2),
+                'Fixation_Duration': round(fixation['duration'] * 1000, 2),  # Convert to milliseconds
+                'Time_from_Stimulus_Onset': round(time_from_onset * 1000, 2),  # Convert to milliseconds
+                'Pupil_Size': round(self.get_average_pupil_size(), 2),
+                'Blink_Frequency': round(self.get_blink_frequency(), 2)
+            }
+            
+            csv_data.append(csv_row)
+        
+        # Write to CSV
+        if csv_data:
+            fieldnames = ['Fixation_Order', 'Fixated_Word', 'Fixation_X_Screen', 'Fixation_Y_Screen', 
+                         'Fixation_Duration', 'Time_from_Stimulus_Onset', 'Pupil_Size', 'Blink_Frequency']
+            
+            with open(full_path, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(csv_data)
+            
+            print(f"✅ Text reading data exported to: {full_path}")
+            print(f"👁️  Total fixations: {len(csv_data)}")
+            print(f"📖 Blink frequency: {self.get_blink_frequency():.1f} blinks/min")
+            
+            return full_path
+        else:
+            print("⚠️  No fixation data available for export")
+            return None
     
     def export_data_to_csv(self, filename: str = None):
         """Export all collected movement data to CSV file for model training"""

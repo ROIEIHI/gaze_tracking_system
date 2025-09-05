@@ -21,6 +21,10 @@ class GazePredictor:
         self.movement_analyzer = None
         self.analysis_enabled = False
         
+        # Multi-page text system
+        self.current_page = 0
+        self.total_pages = 4
+        
         # Load model if path provided
         if model_path:
             self.load_model(model_path)
@@ -68,10 +72,15 @@ class GazePredictor:
             self.movement_analyzer.start_reading_session()
             print("📊 Started eye movement analysis session")
     
-    def finish_analysis_session(self, auto_export=True):
+    def finish_analysis_session(self, auto_export=True, text_reading_mode=False):
         """Finish movement analysis session and export data"""
         if self.movement_analyzer:
-            csv_file = self.movement_analyzer.finish_analysis_session(auto_export)
+            if text_reading_mode:
+                # Use specialized text reading export
+                csv_file = self.movement_analyzer.export_text_reading_csv()
+            else:
+                # Use standard export
+                csv_file = self.movement_analyzer.finish_analysis_session(auto_export)
             return csv_file
         return None
     
@@ -188,106 +197,143 @@ class GazePredictor:
             cv2.putText(image, 'Z', z_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
     
     def create_text_window(self):
-        """Create window with reading text for text analysis mode"""
-        # Create text window manually using OpenCV
-        window = np.ones((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8) * 255
-        
-        text = """The benefits of pets
-
-Most pet owners are clear about the immediate joys that come with sharing their lives with companion animals.
+        """Create multi-page window with reading text for text analysis mode"""
+        # Define the 4 pages of text content
+        pages = [
+            # Page 1
+            """Most pet owners are clear about the immediate joys that come with sharing their lives with companion animals.
 However, many of us remain unaware of the physical and mental health benefits that can also accompany the
 pleasure of snuggling up to a furry friend. It's only recently that studies have begun to scientifically explore the
-benefits of the human-animal bond.
-
-Pets have evolved to become acutely attuned to humans and our behavior and emotions. Dogs, for example, are
+benefits of the human-animal bond.""",
+            
+            # Page 2
+            """Pets have evolved to become acutely attuned to humans and our behavior and emotions. Dogs, for example, are
 able to understand many of the words we use, but they're even better at interpreting our tone of voice, body
 language, and gestures. And like any good human friend, a loyal dog will look into your eyes to gauge your
 emotional state and try to understand what you're thinking and feeling (and to work out when the next walk or
-treat might be coming, of course).
-
-Pets, especially dogs and cats, can reduce stress, anxiety, and depression, ease loneliness, encourage exercise
+treat might be coming, of course).""",
+            
+            # Page 3
+            """Pets, especially dogs and cats, can reduce stress, anxiety, and depression, ease loneliness, encourage exercise
 and playfulness, and even improve your cardiovascular health. Caring for an animal can help children grow up
 more secure and active. Pets also provide valuable companionship for older adults. Perhaps most importantly,
-though, a pet can add real joy and unconditional love to your life.
-
-Any pet can improve your health
-
+though, a pet can add real joy and unconditional love to your life.""",
+            
+            # Page 4
+            """Any pet can improve your health
 While it's true that people with pets often experience greater health benefits than those without, a pet doesn't
 necessarily have to be a dog or a cat. A rabbit could be ideal if you're allergic to other animals or have limited
 space but still want a furry friend to snuggle with. Birds can encourage social interaction and help keep your
 mind sharp if you're an older adult. Snakes, lizards, and other reptiles can make for exotic companions. Even
 watching fish in an aquarium can help reduce muscle tension and lower your pulse rate."""
+        ]
         
-        # Calculate layout parameters for better centering and spacing
-        side_margin = self.calibrator.WINDOW_WIDTH // 15  # 6.7% margins on each side for more text space
-        top_margin = 70  # Slightly less space at top for more content
-        max_width = self.calibrator.WINDOW_WIDTH - 2 * side_margin
-        max_height = self.calibrator.WINDOW_HEIGHT - top_margin - 20  # Less bottom margin
+        # Create white background window
+        window = np.ones((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8) * 255
         
-        y = top_margin
+        # Calculate text area (70% of screen width, centered)
+        text_width = int(self.calibrator.WINDOW_WIDTH * 0.7)
+        text_height = int(self.calibrator.WINDOW_HEIGHT * 0.6)
         
-        # Use better font settings for improved readability
-        title_font = cv2.FONT_HERSHEY_DUPLEX  # Better quality font
-        text_font = cv2.FONT_HERSHEY_DUPLEX   # Better quality font
-        title_font_scale = 1.2  # Smaller title to save space
-        text_font_scale = 0.5  # Slightly smaller text to accommodate more spacing
-        title_thickness = 2
+        # Center the text area with slight downward offset for better visual balance
+        text_start_x = (self.calibrator.WINDOW_WIDTH - text_width) // 2
+        text_start_y = (self.calibrator.WINDOW_HEIGHT - text_height) // 2 + 50
+        
+        # Font settings
+        text_font = cv2.FONT_HERSHEY_DUPLEX
+        text_font_scale = 0.6
         text_thickness = 1
         color = (0, 0, 0)  # Black color
-        line_spacing = 28  # Increased line spacing for better readability
+        line_spacing = 35
         
-        # Split text into title and content
-        lines = text.strip().split('\n')
-        title = lines[0] if lines else "The benefits of pets"
-        content_lines = lines[2:] if len(lines) > 2 else lines[1:]  # Skip title and empty line
-        content = '\n'.join(content_lines)
+        # Get current page text
+        current_text = pages[self.current_page]
         
-        # Draw title
-        title_size = cv2.getTextSize(title, title_font, title_font_scale, title_thickness)[0]
-        title_x = (self.calibrator.WINDOW_WIDTH - title_size[0]) // 2  # Center the title
-        cv2.putText(window, title, (title_x, y), title_font, title_font_scale, color, title_thickness)
-        y += 35  # Reduced space after title to fit more content
+        # Process and display text
+        y = text_start_y
+        words = current_text.split()
+        current_line = ""
         
-        # Process paragraphs
-        paragraphs = content.split('\n\n')
-        for paragraph in paragraphs:
-            # Check if we have enough space for at least one line
-            if y > max_height - 20:
-                break
-                
-            # Process each paragraph line by line
-            paragraph_lines = paragraph.strip().split('\n')
-            for paragraph_line in paragraph_lines:
-                words = paragraph_line.split()
-                current_line = ""
-                
-                for word in words:
-                    test_line = current_line + (" " if current_line else "") + word
-                    text_size = cv2.getTextSize(test_line, text_font, text_font_scale, text_thickness)[0]
-                    
-                    if text_size[0] <= max_width:
-                        current_line = test_line
-                    else:
-                        if current_line:
-                            cv2.putText(window, current_line, (side_margin, y), text_font, text_font_scale, color, text_thickness)
-                            y += line_spacing
-                            if y > max_height - 20:
-                                break
-                        current_line = word
-                
-                # Draw the remaining text
-                if current_line and y <= max_height - 20:
-                    cv2.putText(window, current_line, (side_margin, y), text_font, text_font_scale, color, text_thickness)
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            text_size = cv2.getTextSize(test_line, text_font, text_font_scale, text_thickness)[0]
+            
+            if text_size[0] <= text_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    # Center the line within text area
+                    line_size = cv2.getTextSize(current_line, text_font, text_font_scale, text_thickness)[0]
+                    line_x = text_start_x + (text_width - line_size[0]) // 2
+                    cv2.putText(window, current_line, (line_x, y), text_font, text_font_scale, color, text_thickness)
                     y += line_spacing
-                    
-                if y > max_height - 20:
-                    break
-                    
-            y += 6  # Reduced space between paragraphs to fit more content
-            if y > max_height - 20:
-                break
+                current_line = word
+        
+        # Draw the remaining text
+        if current_line:
+            line_size = cv2.getTextSize(current_line, text_font, text_font_scale, text_thickness)[0]
+            line_x = text_start_x + (text_width - line_size[0]) // 2
+            cv2.putText(window, current_line, (line_x, y), text_font, text_font_scale, color, text_thickness)
+        
+        # Draw navigation arrows and page info
+        self._draw_navigation(window)
+        
+        # Set text content for word detection if movement analyzer is active
+        if self.analysis_enabled and self.movement_analyzer:
+            self.movement_analyzer.set_text_content(
+                current_text, text_start_x, text_start_y, text_width, line_spacing, text_font_scale
+            )
         
         return window
+    
+    def _draw_navigation(self, window):
+        """Draw navigation arrows and page information"""
+        arrow_size = 30
+        arrow_y = self.calibrator.WINDOW_HEIGHT // 2
+        arrow_color = (100, 100, 100)  # Gray color
+        arrow_thickness = 3
+        
+        # Left arrow (if not on first page)
+        if self.current_page > 0:
+            left_arrow_x = 50
+            # Draw left arrow triangle
+            pts = np.array([[left_arrow_x + arrow_size, arrow_y - arrow_size//2],
+                           [left_arrow_x, arrow_y],
+                           [left_arrow_x + arrow_size, arrow_y + arrow_size//2]], np.int32)
+            cv2.fillPoly(window, [pts], arrow_color)
+        
+        # Right arrow (if not on last page)
+        if self.current_page < self.total_pages - 1:
+            right_arrow_x = self.calibrator.WINDOW_WIDTH - 50 - arrow_size
+            # Draw right arrow triangle
+            pts = np.array([[right_arrow_x, arrow_y - arrow_size//2],
+                           [right_arrow_x + arrow_size, arrow_y],
+                           [right_arrow_x, arrow_y + arrow_size//2]], np.int32)
+            cv2.fillPoly(window, [pts], arrow_color)
+        
+        # Page information
+        page_info = f"Page {self.current_page + 1} of {self.total_pages}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.6
+        thickness = 2
+        text_size = cv2.getTextSize(page_info, font, font_scale, thickness)[0]
+        page_x = (self.calibrator.WINDOW_WIDTH - text_size[0]) // 2
+        page_y = self.calibrator.WINDOW_HEIGHT - 50
+        cv2.putText(window, page_info, (page_x, page_y), font, font_scale, (50, 50, 50), thickness)
+    
+    def handle_page_navigation(self, key):
+        """Handle page navigation based on key press"""
+        key_code = key & 0xFF
+        
+        if key_code == ord('a') or key_code == ord('A'):  # A key - previous page
+            if self.current_page > 0:
+                self.current_page -= 1
+                return True
+        elif key_code == ord('d') or key_code == ord('D'):  # D key - next page
+            if self.current_page < self.total_pages - 1:
+                self.current_page += 1
+                return True
+        return False
     
     def real_time_prediction(self, mode="standard"):
         """Real-time gaze prediction with mode selection"""
@@ -355,6 +401,19 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                 
                 # Extract features and predict
                 result = self.calibrator.extract_iris_features(frame, results)
+                
+                # Extract pupil size and blink data for analysis
+                pupil_blink_data = self.calibrator.extract_pupil_and_blink_data(results)
+                
+                if result and self.model:
+                    features, (rotation_vector, translation_vector) = result
+                    
+                    # Add pupil size and blink data to movement analyzer if available
+                    if pupil_blink_data and self.analysis_enabled and self.movement_analyzer:
+                        pupil_size, is_blink = pupil_blink_data
+                        self.movement_analyzer.add_pupil_size(pupil_size)
+                        if is_blink:
+                            self.movement_analyzer.record_blink()
                 if result and self.model:
                     features, (rotation_vector, translation_vector) = result
                     
@@ -412,15 +471,32 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                 
                 # Add instructions in top-left corner
                 text_color = (0, 0, 0) if mode == "text_analysis" else (255, 255, 255)
-                instruction_text = "Press 'q' to quit"
+                if mode == "text_analysis":
+                    instruction_text = "Press 'q' to quit | 'A' previous page | 'D' next page"
+                else:
+                    instruction_text = "Press 'q' to quit"
                 cv2.putText(window, instruction_text, (20, 30), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2)
                 
                 cv2.imshow(window_name, window)
                 
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord('q'):
+                key = cv2.waitKey(1)
+                key_code = key & 0xFF
+                
+                if key_code == ord('q'):
                     break
+                elif mode == "text_analysis":
+                    # Handle page navigation with A/D keys only
+                    if key_code == ord('a') or key_code == ord('A'):  # A key - previous page
+                        if hasattr(self, 'current_page') and self.current_page > 0:
+                            self.current_page -= 1
+                            text_window = self.create_text_window()
+                            print(f"Moved to page {self.current_page + 1}")
+                    elif key_code == ord('d') or key_code == ord('D'):  # D key - next page
+                        if hasattr(self, 'current_page') and self.current_page < self.total_pages - 1:
+                            self.current_page += 1
+                            text_window = self.create_text_window()
+                            print(f"Moved to page {self.current_page + 1}")
         
         finally:
             cap.release()
@@ -429,10 +505,15 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
             # Finish movement analysis session if it was active
             if self.analysis_enabled and self.movement_analyzer:
                 print("\n🔬 Automatic eye movement analysis completed!")
-                csv_file = self.finish_analysis_session(auto_export=True)
+                # Use text reading export for text analysis mode
+                csv_file = self.finish_analysis_session(auto_export=True, text_reading_mode=(mode == "text_analysis"))
                 if csv_file:
-                    print(f"📊 Eye movement data automatically saved to: {csv_file}")
-                    print("💡 This data is ready for model training!")
+                    if mode == "text_analysis":
+                        print(f"📊 Text reading data automatically saved to: {csv_file}")
+                        print("📖 Data includes: Fixation Order, Fixated Words, Screen Coordinates, Duration, etc.")
+                    else:
+                        print(f"📊 Eye movement data automatically saved to: {csv_file}")
+                        print("💡 This data is ready for model training!")
                 else:
                     print("⚠️  No movement data was collected during this session")
                 self.disable_movement_analysis()
