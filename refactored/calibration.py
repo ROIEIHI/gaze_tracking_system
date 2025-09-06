@@ -299,11 +299,15 @@ class EyeTrackerCalibrator:
         pitch_deg = y * 180.0 / np.pi  
         yaw_deg = z * 180.0 / np.pi
         
-        # Normalize to [-1, 1] range with wide ranges to handle Euler angle discontinuities
-        # The raw angles can jump to ±180° due to Euler angle limitations
-        pitch = np.clip(pitch_deg, -45, 45) / 45.0      # Pitch: ±45° for head up/down
-        yaw = np.clip(yaw_deg, -180, 180) / 180.0       # Yaw: ±180° to handle discontinuity
-        roll = np.clip(roll_deg, -180, 180) / 180.0     # Roll: ±180° to handle discontinuity
+        # Normalize to [-1, 1] range with optimized ranges for each angle type
+        # Based on empirical analysis of typical head movements in front of camera
+        pitch = np.clip(pitch_deg, -45, 45) / 45.0        # Pitch: ±45° for head up/down
+        yaw = np.clip(yaw_deg, -180, 180) / 180.0         # Yaw: ±180° to handle discontinuity
+        
+        # For roll, center around typical camera position (~-160°) with ±30° range  
+        # This gives better sensitivity for natural head tilting movements
+        roll_centered = roll_deg + 160  # Center around -160°
+        roll = np.clip(roll_centered, -30, 30) / 30.0     # Roll: ±30° around typical position
         
         return yaw, pitch, roll, rotation_vector, translation_vector
 
@@ -374,12 +378,12 @@ class EyeTrackerCalibrator:
         face_in_boundary = self.is_face_in_boundary(results, self.WINDOW_WIDTH, self.WINDOW_HEIGHT) if results.multi_face_landmarks else False
         
         if not face_quality_ok:
-            print("⚠️ WARNING: Face detection quality insufficient")
+            print("WARNING: Face detection quality insufficient")
             self.session_paused = True
             return self.show_warning_window(cap, 'face_detection')
         
         if not face_in_boundary:
-            print("⚠️ WARNING: User moved outside boundary area")
+            print("WARNING: User moved outside boundary area")
             self.session_paused = True
             return self.show_warning_window(cap, 'boundary_exit')
         

@@ -1,183 +1,303 @@
+"""
+Streamlined Gaze Tracking System Main Interface
+Multi-Output XGBoost Implementation
+"""
+
 import os
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
-import cv2
+from tkinter import messagebox, filedialog
 from calibration import EyeTrackerCalibrator
 from model_training import GazeModelTrainer
 from prediction import GazePredictor
 
-class ModeSelector:
+class GazeTrackingSystem:
+    """Main interface for the streamlined gaze tracking system."""
+    
     def __init__(self):
-        self.selected_mode = None
-        self.root = None
-    
-    def select_mode(self, mode):
-        """Select mode and close window"""
-        self.selected_mode = mode
-        if self.root:
-            self.root.destroy()
-    
-    def get_selection(self):
-        """Display mode selection window and return selected mode"""
         self.root = tk.Tk()
-        self.root.title("Gaze Tracking System - Mode Selection")
-        self.root.geometry("450x350")
+        self.root.title("Streamlined Gaze Tracking System")
+        self.root.geometry("500x400")
         self.root.resizable(False, False)
         
         # Center the window
         self.root.eval('tk::PlaceWindow . center')
         
+        self.setup_ui()
+    
+    def setup_ui(self):
+        """Setup the user interface."""
         # Title
-        title_label = tk.Label(self.root, text="Gaze Tracking System", 
-                              font=("Arial", 16, "bold"))
-        title_label.pack(pady=10)
+        title_label = tk.Label(self.root, 
+                              text="Gaze Tracking System", 
+                              font=("Arial", 18, "bold"),
+                              fg="navy")
+        title_label.pack(pady=15)
         
-        # Description
-        desc_label = tk.Label(self.root, 
-                             text="Select the mode you want to run:",
-                             font=("Arial", 12))
-        desc_label.pack(pady=5)
+        # Subtitle
+        subtitle_label = tk.Label(self.root, 
+                                 text="Multi-Output XGBoost Implementation", 
+                                 font=("Arial", 12),
+                                 fg="gray")
+        subtitle_label.pack(pady=5)
         
-        # Info about automatic analysis
-        info_label = tk.Label(self.root, 
-                             text="💡 Text Reading mode automatically collects\neye movement data for model training",
-                             font=("Arial", 9),
-                             fg="blue")
-        info_label.pack(pady=2)
+        # Main buttons frame
+        main_frame = tk.Frame(self.root)
+        main_frame.pack(pady=20)
         
-        # Buttons frame
-        button_frame = tk.Frame(self.root)
-        button_frame.pack(pady=10)
+        # Calibration button
+        calib_btn = tk.Button(main_frame,
+                             text="📍 Run Calibration",
+                             command=self.run_calibration,
+                             font=("Arial", 12, "bold"),
+                             bg="#4CAF50",
+                             fg="white",
+                             width=20,
+                             height=2)
+        calib_btn.pack(pady=10)
         
-        # Standard mode button
-        standard_btn = tk.Button(button_frame, 
-                               text="Standard Gaze Tracking", 
-                               command=lambda: self.select_mode("standard"),
-                               width=25, height=2,
-                               font=("Arial", 10))
-        standard_btn.pack(pady=5)
+        # Training button
+        train_btn = tk.Button(main_frame,
+                             text="🤖 Train Model",
+                             command=self.train_model,
+                             font=("Arial", 12, "bold"),
+                             bg="#2196F3",
+                             fg="white",
+                             width=20,
+                             height=2)
+        train_btn.pack(pady=10)
         
-        # Text analysis mode button (with automatic movement analysis)
-        text_btn = tk.Button(button_frame, 
-                           text="Text Reading Analysis\n(Auto Eye Movement Data Collection)", 
-                           command=lambda: self.select_mode("text_analysis"),
-                           width=35, height=3,
-                           font=("Arial", 9),
-                           bg="#e8f5e8")  # Light green background to highlight
-        text_btn.pack(pady=5)
+        # Prediction button
+        predict_btn = tk.Button(main_frame,
+                               text="Real-Time Prediction",
+                               command=self.run_prediction,
+                               font=("Arial", 12, "bold"),
+                               bg="#FF9800",
+                               fg="white",
+                               width=20,
+                               height=2)
+        predict_btn.pack(pady=10)
         
-        # Cancel button
-        cancel_btn = tk.Button(button_frame, 
-                             text="Cancel", 
-                             command=lambda: self.select_mode(None),
-                             width=25, height=1,
-                             font=("Arial", 10))
-        cancel_btn.pack(pady=10)
+        # Quick workflow button
+        workflow_btn = tk.Button(main_frame,
+                                text="⚡ Complete Workflow",
+                                command=self.run_complete_workflow,
+                                font=("Arial", 12, "bold"),
+                                bg="#9C27B0",
+                                fg="white",
+                                width=20,
+                                height=2)
+        workflow_btn.pack(pady=10)
         
-        # Run the window
-        self.root.mainloop()
+        # Status frame
+        status_frame = tk.Frame(self.root)
+        status_frame.pack(side=tk.BOTTOM, pady=10)
         
-        return self.selected_mode
-
-class GazeTrackingSystem:
-    def __init__(self):
-        self.calibrator = None
-        self.trainer = None
-        self.predictor = None
+        # Status label
+        self.status_label = tk.Label(status_frame,
+                                    text="Ready",
+                                    font=("Arial", 10),
+                                    fg="green")
+        self.status_label.pack()
         
-        # Create necessary directories
-        self.setup_directories()
+        # Info text
+        info_text = tk.Text(self.root, height=6, width=60, font=("Arial", 9))
+        info_text.pack(pady=10)
+        info_text.insert(tk.END, 
+                        "🔹 Calibration: Collect training data using 21-point calibration\n"
+                        "🔹 Train Model: Build multi-output XGBoost model with Euclidean optimization\n"
+                        "🔹 Real-Time Prediction: Use trained model for live gaze tracking\n"
+                        "🔹 Complete Workflow: Run calibration → training → prediction in sequence\n\n"
+                        "💡 The system uses advanced feature engineering and data augmentation\n"
+                        "   for optimal gaze tracking accuracy with minimal error.")
+        info_text.config(state=tk.DISABLED)
     
-    def setup_directories(self):
-        """Create necessary directories for the system"""
-        base_dir = os.path.dirname(__file__)
-        
-        directories = [
-            os.path.join(base_dir, 'data'),
-            os.path.join(base_dir, 'models'),
-            os.path.join(base_dir, 'assets')
-        ]
-        
-        for directory in directories:
-            os.makedirs(directory, exist_ok=True)
+    def update_status(self, message, color="black"):
+        """Update status message."""
+        self.status_label.config(text=message, fg=color)
+        self.root.update()
     
-    def run_full_pipeline(self, mode="standard"):
-        """Run the complete gaze tracking pipeline"""
-        print("=== Full Gaze Tracking Pipeline ===")
-        
-        # Initialize camera once at the beginning (like working script)
-        print("Initializing camera...")
-        self.calibrator = EyeTrackerCalibrator()
-        cap = None
+    def run_calibration(self):
+        """Run the calibration process."""
+        self.update_status("Running calibration...", "blue")
         
         try:
-            cap = self.calibrator.setup_camera()
-            print("Camera initialized successfully")
+            calibrator = EyeTrackerCalibrator()
+            csv_file = calibrator.run_calibration()
             
-            # Step 1: Calibration
-            print("\nStep 1: Calibration")
-            csv_file = self.calibrator.run_calibration_with_camera(cap)
+            if csv_file:
+                self.update_status(f"Calibration completed: {os.path.basename(csv_file)}", "green")
+                messagebox.showinfo("Success", f"Calibration completed!\nData saved to: {os.path.basename(csv_file)}")
+            else:
+                self.update_status("Calibration failed", "red")
+                messagebox.showerror("Error", "Calibration failed. Please try again.")
+                
+        except Exception as e:
+            self.update_status("Calibration error", "red")
+            messagebox.showerror("Error", f"Calibration error: {str(e)}")
+    
+    def train_model(self):
+        """Train the gaze model."""
+        self.update_status("Training model...", "blue")
+        
+        # Get the current script directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        
+        # Check for calibration data in script directory
+        csv_files = [f for f in os.listdir(script_dir) if f.startswith("calibration_data_") and f.endswith(".csv")]
+        
+        if not csv_files:
+            # If no calibration files found, let user browse for one
+            self.update_status("No calibration data found - please select file", "orange")
+            csv_file = filedialog.askopenfilename(
+                title="Select Calibration Data File",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                initialdir=script_dir
+            )
             
             if not csv_file:
-                print("Calibration failed. Pipeline aborted.")
+                self.update_status("No calibration data selected", "red")
+                messagebox.showerror("Error", "No calibration data selected. Please run calibration first or select a calibration file.")
                 return
-            
-            # Step 2: Model Training
-            print("\nStep 2: Model Training")
-            self.trainer = GazeModelTrainer()
-            model_path = self.trainer.train_from_csv(csv_file, create_visualizations=False)
-            
-            if not model_path:
-                print("Model training failed. Pipeline aborted.")
-                return
-            
-            # Step 3: Real-time Prediction
-            print("\nStep 3: Real-time Prediction")
-            self.predictor = GazePredictor()
-            self.predictor.run_prediction_with_camera(cap, model_path, mode=mode)
-            
-        except Exception as e:
-            print(f"Error in pipeline: {str(e)}")
-            
-        finally:
-            # Always release camera resources (like working script)
-            if cap is not None:
-                cap.release()
-            cv2.destroyAllWindows()
-            
-        print("=== Full Pipeline Complete ===")
-    
-    def run_system(self):
-        """Main system entry point"""
-        print("Welcome to the Gaze Tracking System!")
-        
-        # Mode selection
-        mode_selector = ModeSelector()
-        selected_mode = mode_selector.get_selection()
-        
-        if selected_mode is None:
-            print("No mode selected. Exiting.")
-            return
-        
-        # Execute based on selected mode
-        if selected_mode == "standard":
-            self.run_full_pipeline(mode="standard")
-        elif selected_mode == "text_analysis":
-            self.run_full_pipeline(mode="text_analysis")
         else:
-            print(f"Unknown mode: {selected_mode}")
+            # Use the most recent calibration file
+            csv_files.sort(reverse=True)
+            csv_file = os.path.join(script_dir, csv_files[0])
+            print(f"Using calibration file: {csv_file}")
+        
+        try:
+            trainer = GazeModelTrainer()
+            model_path = trainer.train_from_csv(csv_file, save_model=True, noise_level=5.0)
+            
+            if model_path:
+                error = trainer.training_history.get('mean_euclidean_error', 'N/A')
+                r2 = trainer.training_history.get('avg_r2_score', 'N/A')
+                
+                self.update_status(f"Model trained: {error:.1f}px error", "green")
+                messagebox.showinfo("Success", 
+                                   f"Model training completed!\n"
+                                   f"Using data: {os.path.basename(csv_file)}\n"
+                                   f"Model saved to: {os.path.basename(model_path)}\n"
+                                   f"Test Error: {error:.2f} pixels\n"
+                                   f"R² Score: {r2:.4f}")
+            else:
+                self.update_status("Training failed", "red")
+                messagebox.showerror("Error", "Model training failed. Please try again.")
+                
+        except Exception as e:
+            self.update_status("Training error", "red")
+            messagebox.showerror("Error", f"Training error: {str(e)}")
+    
+    def run_prediction(self):
+        """Run real-time prediction."""
+        self.update_status("Starting prediction...", "blue")
+        
+        try:
+            # Hide main window
+            self.root.withdraw()
+            
+            # Create predictor and attempt to load default model
+            predictor = GazePredictor()
+            if predictor.load_default_model():
+                self.update_status("Running real-time prediction", "green")
+                predictor.run_real_time_prediction()
+            else:
+                # Fallback: let user browse for model file
+                self.update_status("Default model not found - please select file", "orange")
+                script_dir = os.path.dirname(os.path.abspath(__file__))
+                models_dir = os.path.join(script_dir, "models")
+                
+                model_path = filedialog.askopenfilename(
+                    title="Select Trained Model File",
+                    filetypes=[("Joblib files", "*.joblib"), ("All files", "*.*")],
+                    initialdir=models_dir if os.path.exists(models_dir) else script_dir
+                )
+                
+                if model_path and predictor.load_model(model_path):
+                    self.update_status("Running real-time prediction", "green")
+                    predictor.run_real_time_prediction()
+                else:
+                    self.update_status("Failed to load model", "red")
+                    messagebox.showerror("Error", "No trained models found. Please train a model first.")
+                    
+        except Exception as e:
+            self.update_status(f"Prediction error: {str(e)}", "red")
+            messagebox.showerror("Error", f"Prediction error: {str(e)}")
+        finally:
+            # Show main window again
+            self.root.deiconify()
+            self.update_status("Ready", "green")
+    
+    def run_complete_workflow(self):
+        """Run the complete workflow: calibration → training → prediction."""
+        if messagebox.askyesno("Complete Workflow", 
+                              "This will run:\n"
+                              "1. Calibration (collect data)\n"
+                              "2. Model training\n"
+                              "3. Real-time prediction\n\n"
+                              "Continue?"):
+            
+            # Step 1: Calibration
+            self.update_status("Step 1/3: Running calibration...", "blue")
+            
+            try:
+                calibrator = EyeTrackerCalibrator()
+                csv_file = calibrator.run_calibration()
+                
+                if not csv_file:
+                    self.update_status("Workflow failed at calibration", "red")
+                    messagebox.showerror("Error", "Calibration failed. Workflow stopped.")
+                    return
+                
+                # Step 2: Training
+                self.update_status("Step 2/3: Training model...", "blue")
+                
+                trainer = GazeModelTrainer()
+                model_path = trainer.train_from_csv(csv_file, save_model=True, noise_level=5.0)
+                
+                if not model_path:
+                    self.update_status("Workflow failed at training", "red")
+                    messagebox.showerror("Error", "Model training failed. Workflow stopped.")
+                    return
+                
+                # Step 3: Prediction
+                self.update_status("Step 3/3: Starting prediction...", "blue")
+                
+                # Hide main window
+                self.root.withdraw()
+                
+                predictor = GazePredictor(model_path)
+                if predictor.model is not None:
+                    error = trainer.training_history.get('mean_euclidean_error', 'N/A')
+                    messagebox.showinfo("Workflow Complete", 
+                                       f"Complete workflow finished!\n"
+                                       f"Model Error: {error:.2f} pixels\n"
+                                       f"Starting real-time prediction...")
+                    
+                    predictor.run_real_time_prediction(enable_smoothing=True, smoothing_alpha=0.3)
+                else:
+                    messagebox.showerror("Error", "Failed to load trained model.")
+                
+            except Exception as e:
+                messagebox.showerror("Error", f"Workflow error: {str(e)}")
+            
+            finally:
+                # Show main window again
+                self.root.deiconify()
+                self.update_status("Ready", "green")
+    
+    def run(self):
+        """Start the application."""
+        self.root.mainloop()
 
 def main():
-    """Main application entry point"""
+    """Main function."""
+    print("Starting Streamlined Gaze Tracking System...")
+    
     try:
-        system = GazeTrackingSystem()
-        system.run_system()
-    except KeyboardInterrupt:
-        print("\nApplication interrupted by user.")
+        app = GazeTrackingSystem()
+        app.run()
     except Exception as e:
-        print(f"An error occurred: {str(e)}")
-        import traceback
-        traceback.print_exc()
+        print(f"Application error: {str(e)}")
 
 if __name__ == "__main__":
     main()

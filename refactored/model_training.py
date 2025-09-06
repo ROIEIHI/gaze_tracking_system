@@ -1,143 +1,120 @@
+"""
+Streamlined Multi-Output RandomForest Gaze Model Training
+Optimized for Euclidean Distance Minimization
+"""
+
 import pandas as pd
 import numpy as np
 import joblib
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
-from sklearn.multioutput import MultiOutputRegressor
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
+from sklearn.metrics import mean_squared_error, r2_score, make_scorer
+from sklearn.preprocessing import StandardScaler
+from sklearn.ensemble import RandomForestRegressor
 import datetime
 import os
 
-# Optional imports for visualizations
-try:
-    import xgboost as xgb
-    XGBOOST_AVAILABLE = True
-except ImportError:
-    XGBOOST_AVAILABLE = False
-    print("Warning: XGBoost not available. Using basic sklearn models.")
+def euclidean_distance_scorer(y_true, y_pred):
+    """
+    Custom scorer for calculating mean Euclidean distance between true and predicted (x, y) coordinates.
+    
+    Args:
+        y_true: True (x, y) coordinates with shape (n_samples, 2)
+        y_pred: Predicted (x, y) coordinates with shape (n_samples, 2)
+        
+    Returns:
+        float: Negative mean Euclidean distance (negative because GridSearchCV maximizes)
+    """
+    y_true = np.array(y_true)
+    y_pred = np.array(y_pred)
+    
+    # Calculate Euclidean distances for each sample
+    euclidean_distances = np.sqrt(np.sum((y_true - y_pred) ** 2, axis=1))
+    
+    # Return negative mean distance (GridSearchCV maximizes, we want to minimize distance)
+    return -np.mean(euclidean_distances)
 
-try:
-    import matplotlib.pyplot as plt
-    MATPLOTLIB_AVAILABLE = True
-except ImportError:
-    MATPLOTLIB_AVAILABLE = False
-    print("Warning: Matplotlib not available. Visualizations disabled.")
-
-try:
-    import seaborn as sns
-    SEABORN_AVAILABLE = True
-except ImportError:
-    SEABORN_AVAILABLE = False
-    print("Warning: Seaborn not available. Some visualizations disabled.")
+def feature_engineer(df):
+    """
+    Apply feature engineering to the preprocessed calibration data.
+    
+    Args:
+        df: DataFrame with preprocessed calibration data
+        
+    Returns:
+        DataFrame with engineered features
+    """
+    print("Performing feature engineering...")
+    
+    # Create average normalized eye coordinates
+    df['avg_norm_x'] = (df['norm_x_L'] + df['norm_x_R']) / 2
+    df['avg_norm_y'] = (df['norm_y_L'] + df['norm_y_R']) / 2
+    
+    # Create interaction features
+    df['x_yaw_interaction'] = df['avg_norm_x'] * df['yaw']
+    df['y_pitch_interaction'] = df['avg_norm_y'] * df['pitch']
+    
+    print("Feature engineering complete. Features: ['avg_norm_x', 'avg_norm_y', 'yaw', 'pitch', 'roll', 'x_yaw_interaction', 'y_pitch_interaction']")
+    
+    return df
 
 class GazeModelTrainer:
+    """Streamlined trainer for multi-output XGBoost gaze tracking model."""
+    
     def __init__(self):
+        """Initialize the trainer."""
         self.model = None
+        self.scaler = StandardScaler()
         self.training_history = {}
         
     def load_calibration_data(self, csv_file):
-        """Load calibration data from CSV file"""
+        """Load calibration data from CSV file."""
         try:
             df = pd.read_csv(csv_file)
             print(f"Loaded calibration data from {csv_file}")
             print(f"Data shape: {df.shape}")
-            
-            # Validate required columns
-            required_columns = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll', 'target_x', 'target_y']
-            if not all(col in df.columns for col in required_columns):
-                raise ValueError(f"CSV file missing required columns. Expected: {required_columns}")
-            
             return df
         except Exception as e:
             print(f"Error loading calibration data: {str(e)}")
             return None
     
-    def create_visualizations(self, df):
-        """Create visualizations of the calibration data"""
-        if not MATPLOTLIB_AVAILABLE:
-            print("Skipping visualizations (matplotlib not available)")
-            return
-        
-        print("Creating data visualizations...")
-        
-        # Figure 1: Feature histograms
-        plt.figure(figsize=(12, 8))
-        features = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
-        df[features].hist(bins=20, alpha=0.7, figsize=(12, 8))
-        plt.suptitle('Feature Histograms', fontsize=16)
-        plt.tight_layout()
-        plt.show()
-        
-        # Figure 2: Correlation heatmap
-        plt.figure(figsize=(10, 8))
-        correlation_matrix = df.corr()
-        if SEABORN_AVAILABLE:
-            sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0)
-        else:
-            # Fallback visualization without seaborn
-            plt.imshow(correlation_matrix, cmap='coolwarm', aspect='auto')
-            plt.colorbar()
-            plt.xticks(range(len(correlation_matrix.columns)), correlation_matrix.columns, rotation=45)
-            plt.yticks(range(len(correlation_matrix.index)), correlation_matrix.index)
-        plt.title('Correlation Matrix', fontsize=16)
-        plt.tight_layout()
-        plt.show()
-        
-        # Figure 3: Feature vs target scatter plots
-        fig, axes = plt.subplots(3, 3, figsize=(18, 15))
-        fig.suptitle('Features vs Target Coordinates', fontsize=16)
-        
-        for i, feature in enumerate(features):
-            row = i // 3
-            col = i % 3
-            ax = axes[row, col]
-            
-            ax.scatter(df[feature], df['target_x'], alpha=0.6, label='target_x', color='blue')
-            ax.scatter(df[feature], df['target_y'], alpha=0.6, label='target_y', color='red')
-            ax.set_xlabel(feature)
-            ax.set_ylabel('Target Coordinates')
-            ax.legend()
-            ax.set_title(f'{feature} vs Targets')
-        
-        # Hide unused subplots
-        for i in range(len(features), 9):
-            row = i // 3
-            col = i % 3
-            axes[row, col].set_visible(False)
-        
-        plt.tight_layout()
-        plt.show()
-    
     def preprocess_data(self, df):
-        """Preprocess the calibration data"""
+        """Preprocess the calibration data by removing outliers."""
         print("Preprocessing calibration data...")
         
-        # Check for missing values
-        if df.isnull().sum().sum() > 0:
-            print("Warning: Missing values found in data")
-            df = df.dropna()
-            print(f"Data shape after removing missing values: {df.shape}")
+        # Remove outliers using IQR method for each numeric column
+        numeric_columns = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
         
-        # Check for outliers (basic check)
-        features = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
-        for feature in features:
-            Q1 = df[feature].quantile(0.25)
-            Q3 = df[feature].quantile(0.75)
-            IQR = Q3 - Q1
-            lower_bound = Q1 - 1.5 * IQR
-            upper_bound = Q3 + 1.5 * IQR
-            outliers = df[(df[feature] < lower_bound) | (df[feature] > upper_bound)]
-            if len(outliers) > 0:
-                print(f"Found {len(outliers)} outliers in {feature}")
+        for col in numeric_columns:
+            if col in df.columns:
+                Q1 = df[col].quantile(0.25)
+                Q3 = df[col].quantile(0.75)
+                IQR = Q3 - Q1
+                lower_bound = Q1 - 1.5 * IQR
+                upper_bound = Q3 + 1.5 * IQR
+                
+                outliers = df[(df[col] < lower_bound) | (df[col] > upper_bound)]
+                if len(outliers) > 0:
+                    print(f"Found {len(outliers)} outliers in {col}")
+                    df = df[(df[col] >= lower_bound) & (df[col] <= upper_bound)]
         
         print(f"Final preprocessed data shape: {df.shape}")
         return df
     
-    def train_model(self, df, test_size=0.2, random_state=42):
-        """Train the XGBoost model"""
-        print("--- Training Model ---")
+    def train_model(self, df, noise_level=5.0):
+        """
+        Train multi-output XGBoost model with Euclidean distance optimization.
+        
+        Args:
+            df: Preprocessed DataFrame with calibration data
+            noise_level: Standard deviation of Gaussian noise for data augmentation
+            
+        Returns:
+            Trained model or None if training fails
+        """
+        print("--- Training Multi-Output XGBoost Model with Euclidean Distance Optimization ---")
         
         # Prepare features and targets
-        feature_columns = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
+        feature_columns = ['avg_norm_x', 'avg_norm_y', 'yaw', 'pitch', 'roll', 'x_yaw_interaction', 'y_pitch_interaction']
         target_columns = ['target_x', 'target_y']
         
         X = df[feature_columns].values
@@ -148,211 +125,237 @@ class GazeModelTrainer:
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=random_state
+            X, y, test_size=0.2, random_state=42
         )
         
-        print(f"Training set size: {X_train.shape[0]}")
-        print(f"Test set size: {X_test.shape[0]}")
+        print(f"Training set size: {len(X_train)}")
+        print(f"Test set size: {len(X_test)}")
         
-        # Create and train model
-        if XGBOOST_AVAILABLE:
-            print("Using XGBoost regressor...")
-            base_regressor = xgb.XGBRegressor(
-                n_estimators=100,
-                random_state=random_state,
-                max_depth=6,
-                learning_rate=0.1
-            )
+        # Apply data augmentation to training set
+        if noise_level > 0:
+            print(f"Applying data augmentation to training targets...")
+            noise = np.random.normal(0, noise_level, y_train.shape)
+            y_train_augmented = y_train + noise
         else:
-            print("Using Random Forest regressor (XGBoost not available)...")
-            from sklearn.ensemble import RandomForestRegressor
-            base_regressor = RandomForestRegressor(
-                n_estimators=100,
-                random_state=random_state,
-                max_depth=6
-            )
+            y_train_augmented = y_train
         
-        self.model = MultiOutputRegressor(base_regressor)
+        # Scale features
+        print("Scaling features...")
+        X_train_scaled = self.scaler.fit_transform(X_train)
+        X_test_scaled = self.scaler.transform(X_test)
         
-        print("Training model...")
-        self.model.fit(X_train, y_train)
+        # Define parameter grid for RandomForestRegressor GridSearchCV
+        param_grid = {
+            'n_estimators': [100, 200, 300],
+            'max_depth': [5, 10, 15, None],
+            'min_samples_split': [2, 5, 10],
+            'min_samples_leaf': [1, 2, 4],
+            'max_features': ['sqrt', 'log2', None]
+        }
         
-        # Evaluate model
-        print("Evaluating model...")
-        y_pred_train = self.model.predict(X_train)
-        y_pred_test = self.model.predict(X_test)
+        # Create multi-output RandomForest regressor
+        model = RandomForestRegressor(
+            random_state=42,
+            n_jobs=-1
+        )
         
-        # Calculate metrics
-        train_rmse_x = np.sqrt(mean_squared_error(y_train[:, 0], y_pred_train[:, 0]))
-        train_rmse_y = np.sqrt(mean_squared_error(y_train[:, 1], y_pred_train[:, 1]))
-        test_rmse_x = np.sqrt(mean_squared_error(y_test[:, 0], y_pred_test[:, 0]))
-        test_rmse_y = np.sqrt(mean_squared_error(y_test[:, 1], y_pred_test[:, 1]))
+        # Create custom scorer
+        scorer = make_scorer(euclidean_distance_scorer, greater_is_better=True)
         
-        # Calculate mean prediction error
-        train_distances = np.sqrt((y_train[:, 0] - y_pred_train[:, 0])**2 + (y_train[:, 1] - y_pred_train[:, 1])**2)
-        test_distances = np.sqrt((y_test[:, 0] - y_pred_test[:, 0])**2 + (y_test[:, 1] - y_pred_test[:, 1])**2)
+        # Perform GridSearchCV with custom scorer
+        print("Training multi-output RandomForest model with GridSearchCV using Euclidean distance scorer...")
+        grid_search = GridSearchCV(
+            model,
+            param_grid,
+            scoring=scorer,
+            cv=3,  # Reduced CV folds for faster training with RandomForest
+            n_jobs=-1,
+            verbose=1
+        )
         
-        train_mean_error = np.mean(train_distances)
-        test_mean_error = np.mean(test_distances)
+        grid_search.fit(X_train_scaled, y_train_augmented)
+        
+        # Get best model
+        self.model = grid_search.best_estimator_
+        best_params = grid_search.best_params_
+        best_score = grid_search.best_score_
+        
+        print(f"Best model parameters: {best_params}")
+        print(f"Best CV score (negative mean Euclidean distance): {best_score:.4f}")
+        
+        # Evaluate on test set
+        print("Evaluating model on clean test set...")
+        y_pred = self.model.predict(X_test_scaled)
+        
+        # Calculate Euclidean distance error
+        euclidean_distances = np.sqrt(np.sum((y_test - y_pred) ** 2, axis=1))
+        mean_euclidean_error = np.mean(euclidean_distances)
+        
+        # Calculate R² scores
+        r2_x = r2_score(y_test[:, 0], y_pred[:, 0])
+        r2_y = r2_score(y_test[:, 1], y_pred[:, 1])
+        avg_r2_score = (r2_x + r2_y) / 2
+        
+        # Calculate RMSE for each coordinate
+        rmse_x = np.sqrt(mean_squared_error(y_test[:, 0], y_pred[:, 0]))
+        rmse_y = np.sqrt(mean_squared_error(y_test[:, 1], y_pred[:, 1]))
+        
+        # Cross-validation with Euclidean scorer
+        print("Performing cross-validation with Euclidean distance scorer...")
+        cv_scores = cross_val_score(
+            self.model, X_train_scaled, y_train, 
+            scoring=scorer, cv=5
+        )
         
         # Store training history
         self.training_history = {
-            'train_rmse_x': train_rmse_x,
-            'train_rmse_y': train_rmse_y,
-            'test_rmse_x': test_rmse_x,
-            'test_rmse_y': test_rmse_y,
-            'train_mean_error': train_mean_error,
-            'test_mean_error': test_mean_error,
-            'training_samples': X_train.shape[0],
-            'test_samples': X_test.shape[0]
+            'mean_euclidean_error': mean_euclidean_error,
+            'avg_r2_score': avg_r2_score,
+            'r2_x': r2_x,
+            'r2_y': r2_y,
+            'rmse_x': rmse_x,
+            'rmse_y': rmse_y,
+            'cv_euclidean_mean': np.mean(cv_scores),
+            'cv_euclidean_std': np.std(cv_scores),
+            'best_params': best_params,
+            'training_samples': len(X_train),
+            'test_samples': len(X_test),
+            'noise_level': noise_level
         }
         
-        # Print results
-        print(f"\nModel Evaluation Results:")
-        print(f"Training RMSE X: {train_rmse_x:.2f} pixels")
-        print(f"Training RMSE Y: {train_rmse_y:.2f} pixels")
-        print(f"Training Mean Error: {train_mean_error:.2f} pixels")
-        print(f"Test RMSE X: {test_rmse_x:.2f} pixels")
-        print(f"Test RMSE Y: {test_rmse_y:.2f} pixels")
-        print(f"Test Mean Error: {test_mean_error:.2f} pixels")
-        
-        # Check for overfitting
-        if test_mean_error > train_mean_error * 1.5:
-            print("Warning: Possible overfitting detected!")
+        # Print performance report
+        self._print_performance_report()
         
         return self.model
     
-    def save_model(self, model_filename=None):
-        """Save the trained model to file"""
+    def _print_performance_report(self):
+        """Print detailed performance report."""
+        # Calculate percentage error based on fixed resolution 1080x720
+        screen_width = 1080
+        screen_height = 720
+        screen_diagonal = np.sqrt(screen_width**2 + screen_height**2)
+        percentage_error = (self.training_history['mean_euclidean_error'] / screen_diagonal) * 100
+        
+        print("\n" + "=" * 80)
+        print("MULTI-OUTPUT RANDOM FOREST MODEL PERFORMANCE REPORT")
+        print("=" * 80)
+        print(f"EUCLIDEAN DISTANCE ERROR: {self.training_history['mean_euclidean_error']:.2f} pixels")
+        print(f"PERCENTAGE ERROR: {percentage_error:.2f}% (relative to {screen_width}x{screen_height} diagonal)")
+        print(f"Average R² Score: {self.training_history['avg_r2_score']:.4f}")
+        print(f"X-coordinate R²: {self.training_history['r2_x']:.4f}")
+        print(f"Y-coordinate R²: {self.training_history['r2_y']:.4f}")
+        print(f"X-coordinate RMSE: {self.training_history['rmse_x']:.2f} pixels")
+        print(f"Y-coordinate RMSE: {self.training_history['rmse_y']:.2f} pixels")
+        print(f"Cross-validation Score (Euclidean): {self.training_history['cv_euclidean_mean']:.4f} ± {self.training_history['cv_euclidean_std']:.4f}")
+        print(f"Training samples: {self.training_history['training_samples']}")
+        print(f"Test samples: {self.training_history['test_samples']}")
+        print(f"Noise augmentation level: {self.training_history['noise_level']} pixels")
+        print(f"Best parameters: {self.training_history['best_params']}")
+        print("=" * 80)
+    
+    def save_model(self, custom_filename=None):
+        """
+        Save the trained model and associated data with fixed filename.
+        Always saves as 'gaze_prediction_model.joblib' to overwrite previous models.
+        
+        Args:
+            custom_filename: Optional custom filename for the model (ignored, kept for compatibility)
+            
+        Returns:
+            str: Path to saved model file
+        """
         if self.model is None:
-            print("No model to save. Train a model first.")
+            print("No trained model to save.")
             return None
         
-        if model_filename is None:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_filename = f"gaze_model_{timestamp}.joblib"
+        # Create models directory in parent directory if it doesn't exist
+        # This ensures compatibility with the main project structure
+        parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        models_dir = os.path.join(parent_dir, "models")
+        os.makedirs(models_dir, exist_ok=True)
         
-        try:
-            # Create models directory if it doesn't exist
-            models_dir = os.path.join(os.path.dirname(__file__), 'models')
-            os.makedirs(models_dir, exist_ok=True)
-            
-            model_path = os.path.join(models_dir, model_filename)
-            
-            # Save model and training history
-            model_data = {
-                'model': self.model,
-                'training_history': self.training_history,
-                'feature_columns': ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll'],
-                'target_columns': ['target_x', 'target_y']
-            }
-            
-            joblib.dump(model_data, model_path)
-            print(f"Model saved to: {model_path}")
-            return model_path
-            
-        except Exception as e:
-            print(f"Error saving model: {str(e)}")
-            return None
+        # Use fixed filename to overwrite previous models
+        model_filename = "gaze_prediction_model.joblib"
+        model_path = os.path.join(models_dir, model_filename)
+        
+        # Prepare model data
+        model_data = {
+            'model': self.model,
+            'scaler': self.scaler,
+            'training_history': self.training_history,
+            'feature_columns': ['avg_norm_x', 'avg_norm_y', 'yaw', 'pitch', 'roll', 'x_yaw_interaction', 'y_pitch_interaction'],
+            'target_columns': ['target_x', 'target_y'],
+            'model_type': 'randomforest_multi_output'
+        }
+        
+        # Save model
+        joblib.dump(model_data, model_path)
+        print(f"Multi-output RandomForest model saved to: {model_path}")
+        
+        return model_path
     
-    def load_model(self, model_path):
-        """Load a trained model from file"""
-        try:
-            model_data = joblib.load(model_path)
-            self.model = model_data['model']
-            self.training_history = model_data.get('training_history', {})
-            print(f"Model loaded from: {model_path}")
+    def train_from_csv(self, csv_file, save_model=True, noise_level=5.0):
+        """
+        Complete training pipeline from CSV file.
+        
+        Args:
+            csv_file: Path to calibration CSV file
+            save_model: Whether to save the trained model
+            noise_level: Standard deviation for data augmentation
             
-            # Print model info if available
-            if self.training_history:
-                print(f"Model test error: {self.training_history.get('test_mean_error', 'N/A'):.2f} pixels")
-            
-            return self.model
-            
-        except Exception as e:
-            print(f"Error loading model: {str(e)}")
-            return None
-    
-    def create_prediction_plots(self, df):
-        """Create plots showing model predictions vs actual targets"""
-        if not MATPLOTLIB_AVAILABLE:
-            print("Skipping prediction plots (matplotlib not available)")
-            return
-        
-        if self.model is None:
-            print("No model available for prediction plots")
-            return
-        
-        feature_columns = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
-        X = df[feature_columns].values
-        y_actual = df[['target_x', 'target_y']].values
-        y_pred = self.model.predict(X)
-        
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-        
-        # X coordinate predictions
-        ax1.scatter(y_actual[:, 0], y_pred[:, 0], alpha=0.6)
-        ax1.plot([y_actual[:, 0].min(), y_actual[:, 0].max()], 
-                [y_actual[:, 0].min(), y_actual[:, 0].max()], 'r--', lw=2)
-        ax1.set_xlabel('Actual X')
-        ax1.set_ylabel('Predicted X')
-        ax1.set_title('X Coordinate Predictions')
-        ax1.grid(True)
-        
-        # Y coordinate predictions
-        ax2.scatter(y_actual[:, 1], y_pred[:, 1], alpha=0.6)
-        ax2.plot([y_actual[:, 1].min(), y_actual[:, 1].max()], 
-                [y_actual[:, 1].min(), y_actual[:, 1].max()], 'r--', lw=2)
-        ax2.set_xlabel('Actual Y')
-        ax2.set_ylabel('Predicted Y')
-        ax2.set_title('Y Coordinate Predictions')
-        ax2.grid(True)
-        
-        plt.tight_layout()
-        plt.show()
-    
-    def train_from_csv(self, csv_file, create_visualizations=True, save_model=True):
-        """Complete training pipeline from CSV file"""
-        print("=== Gaze Model Training ===")
+        Returns:
+            str: Path to saved model file if save_model=True, else None
+        """
+        print("=== Streamlined Multi-Output XGBoost Gaze Model Training ===")
         
         # Load data
         df = self.load_calibration_data(csv_file)
         if df is None:
             return None
         
-        # Create visualizations if requested
-        if create_visualizations:
-            self.create_visualizations(df)
-        
         # Preprocess data
         df = self.preprocess_data(df)
-        
-        # Train model
-        model = self.train_model(df)
-        if model is None:
+        if df is None or len(df) == 0:
+            print("Error: No data available after preprocessing.")
             return None
         
-        # Create prediction plots
-        if create_visualizations:
-            self.create_prediction_plots(df)
+        # Apply feature engineering
+        print("Applying feature engineering...")
+        engineered_df = feature_engineer(df)
+        print(f"Engineered data shape: {engineered_df.shape}")
         
-        # Save model if requested
+        # Train model
+        model = self.train_model(engineered_df, noise_level=noise_level)
+        if model is None:
+            print("Model training failed.")
+            return None
+        
+        # Save model
         model_path = None
         if save_model:
             model_path = self.save_model()
         
-        print("=== Training Complete ===")
+        print("=== XGBoost Training Complete ===")
         return model_path
 
-if __name__ == "__main__":
+def main():
+    """Main function for standalone model training."""
     # Example usage
-    trainer = GazeModelTrainer()
+    csv_file = "calibration_data_20250828_110210.csv"
     
-    # Train from a CSV file
-    csv_file = "calibration_data_20250821_120000.csv"  # Replace with actual file
+    if not os.path.exists(csv_file):
+        print(f"Calibration file not found: {csv_file}")
+        print("Please run calibration first or provide correct path.")
+        return
+    
+    trainer = GazeModelTrainer()
     model_path = trainer.train_from_csv(csv_file)
     
     if model_path:
-        print(f"Model successfully trained and saved to: {model_path}")
+        print("Training completed successfully!")
+        print(f"Model saved to: {model_path}")
     else:
-        print("Model training failed")
+        print("Training failed.")
+
+if __name__ == "__main__":
+    main()
