@@ -6,6 +6,7 @@ import time
 import datetime
 import math
 import os
+from collections import deque
 
 class EyeTrackerCalibrator:
     def __init__(self):
@@ -50,6 +51,63 @@ class EyeTrackerCalibrator:
         self.is_currently_in_boundary = False
         self.boundary_exit_timestamp = None
         self.boundary_entry_timestamp = None
+        
+        # Add variables for blink detection
+        self.previous_eye_openness = None
+        self.blink_threshold = 0.2  # Lower threshold for more sensitive blink detection
+        self.eye_openness_history = deque(maxlen=5)  # Track recent eye openness values
+        
+    def extract_pupil_and_blink_data(self, landmarks):
+        """Extract pupil size and detect blinks from facial landmarks"""
+        if not landmarks.multi_face_landmarks:
+            return None, False
+            
+        face_landmarks = landmarks.multi_face_landmarks[0]
+        
+        # Left eye landmarks (eye contour points)
+        left_eye_top = face_landmarks.landmark[159]     # Top eyelid
+        left_eye_bottom = face_landmarks.landmark[145]  # Bottom eyelid
+        left_eye_left = face_landmarks.landmark[33]     # Left corner
+        left_eye_right = face_landmarks.landmark[133]   # Right corner
+        
+        # Right eye landmarks  
+        right_eye_top = face_landmarks.landmark[386]    # Top eyelid
+        right_eye_bottom = face_landmarks.landmark[374] # Bottom eyelid
+        right_eye_left = face_landmarks.landmark[362]   # Left corner
+        right_eye_right = face_landmarks.landmark[263]  # Right corner
+        
+        # Calculate eye openness (vertical distance / horizontal distance)
+        left_eye_height = abs(left_eye_top.y - left_eye_bottom.y)
+        left_eye_width = abs(left_eye_left.x - left_eye_right.x)
+        left_eye_openness = left_eye_height / max(left_eye_width, 0.001)
+        
+        right_eye_height = abs(right_eye_top.y - right_eye_bottom.y)
+        right_eye_width = abs(right_eye_left.x - right_eye_right.x)
+        right_eye_openness = right_eye_height / max(right_eye_width, 0.001)
+        
+        # Average eye openness
+        avg_eye_openness = (left_eye_openness + right_eye_openness) / 2
+        
+        # Add to history for better blink detection
+        self.eye_openness_history.append(avg_eye_openness)
+        
+        # Detect blink using improved algorithm
+        is_blink = False
+        if len(self.eye_openness_history) >= 3:
+            # Look for a dip in eye openness (blink pattern)
+            recent_values = list(self.eye_openness_history)
+            current = recent_values[-1]
+            previous = recent_values[-2]
+            
+            # Detect significant drop in eye openness
+            if current < self.blink_threshold and previous > self.blink_threshold:
+                is_blink = True
+        
+        # Estimate pupil size based on eye dimensions (normalized)
+        # This is an approximation since we don't have direct pupil measurements
+        estimated_pupil_size = (left_eye_width + right_eye_width) / 2 * 100  # Scale for better readability
+        
+        return estimated_pupil_size, is_blink
         
     def _setup_calibration_targets(self):
         """Setup calibration targets - Comprehensive 21-point calibration"""

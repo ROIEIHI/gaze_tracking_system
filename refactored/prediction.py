@@ -1,91 +1,48 @@
-"""
-Streamlined Gaze Prediction with Multi-Output RandomForest Model
-Optimized for real-time performance
-"""
-
 import cv2
+import mediapipe as mp
 import numpy as np
 import joblib
 import os
 from calibration import EyeTrackerCalibrator
-
-# Optional import for eye movement analysis
-try:
-    from eye_movement_analyzer import EyeMovementAnalyzer
-    MOVEMENT_ANALYZER_AVAILABLE = True
-except ImportError:
-    MOVEMENT_ANALYZER_AVAILABLE = False
-    print("Eye movement analyzer not available (optional feature)")
+from eye_movement_analyzer import EyeMovementAnalyzer
 
 class GazePredictor:
-    """Streamlined gaze prediction using multi-output XGBoost model."""
-    
     def __init__(self, model_path=None):
-        """Initialize the gaze predictor."""
         # Initialize the calibrator for feature extraction
         self.calibrator = EyeTrackerCalibrator()
         
         # Prediction-specific attributes
         self.model = None
-        self.scaler = None
         self.model_path = model_path
         self.smoothed_x = None
         self.smoothed_y = None
         
-        # Initialize eye movement analyzer (optional)
+        # Initialize eye movement analyzer
         self.movement_analyzer = None
         self.analysis_enabled = False
+        
+        # Multi-page text system
+        self.current_page = 0
+        self.total_pages = 4
         
         # Load model if path provided
         if model_path:
             self.load_model(model_path)
     
-    def load_default_model(self):
-        """Load the default model with fixed filename."""
-        # Try multiple possible locations for the model
-        possible_paths = [
-            "models/gaze_prediction_model.joblib",  # Local models directory
-            "../models/gaze_prediction_model.joblib",  # Parent directory models
-            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "gaze_prediction_model.joblib")  # Absolute path to parent models
-        ]
-        
-        for model_path in possible_paths:
-            if os.path.exists(model_path):
-                print(f"Found model at: {model_path}")
-                return self.load_model(model_path)
-        
-        print("Default model not found in any of these locations:")
-        for path in possible_paths:
-            print(f"  - {os.path.abspath(path)}")
-        print("Please train a model first.")
-        return False
-    
     def load_model(self, model_path):
-        """Load a trained multi-output model from file."""
+        """Load a trained model from file"""
         try:
             model_data = joblib.load(model_path)
-            
-            # Validate model format - accept both XGBoost and any model type
-            model_type = model_data.get('model_type', 'unknown')
-            print(f"Loading model type: {model_type}")
-            
-            # Extract model components
             self.model = model_data['model']
-            self.scaler = model_data['scaler']
+            self.model_path = model_path
+            print(f"Model loaded from: {model_path}")
             
-            print(f"Model loaded successfully from: {model_path}")
-            
-            # Print model performance info if available
+            # Print model info if available
             training_history = model_data.get('training_history', {})
             if training_history:
-                error = training_history.get('mean_euclidean_error', 'N/A')
-                r2 = training_history.get('avg_r2_score', 'N/A')
-                if isinstance(error, float):
-                    print(f"Model test error: {error:.2f} pixels")
-                if isinstance(r2, float):
-                    print(f"Model R² score: {r2:.4f}")
+                test_error = training_history.get('test_mean_error', 'N/A')
+                print(f"Model test error: {test_error:.2f} pixels" if isinstance(test_error, float) else f"Model test error: {test_error}")
             
-            self.model_path = model_path
             return True
             
         except Exception as e:
@@ -93,11 +50,7 @@ class GazePredictor:
             return False
     
     def enable_movement_analysis(self, window_width=None, window_height=None):
-        """Enable eye movement analysis during prediction."""
-        if not MOVEMENT_ANALYZER_AVAILABLE:
-            print("Eye movement analysis not available")
-            return
-            
+        """Enable eye movement analysis during prediction"""
         if window_width is None:
             window_width = self.calibrator.WINDOW_WIDTH
         if window_height is None:
@@ -105,238 +58,520 @@ class GazePredictor:
             
         self.movement_analyzer = EyeMovementAnalyzer(window_width, window_height)
         self.analysis_enabled = True
-        print("Eye movement analysis enabled")
+        print("✅ Eye movement analysis enabled")
     
     def disable_movement_analysis(self):
-        """Disable eye movement analysis."""
+        """Disable eye movement analysis"""
         self.analysis_enabled = False
         self.movement_analyzer = None
-        print("Eye movement analysis disabled")
+        print("❌ Eye movement analysis disabled")
     
     def start_analysis_session(self):
-        """Start a new movement analysis session."""
+        """Start a new movement analysis session"""
         if self.movement_analyzer:
             self.movement_analyzer.start_reading_session()
-            print("Started eye movement analysis session")
+            print("📊 Started eye movement analysis session")
     
-    def finish_analysis_session(self, auto_export=True):
-        """Finish movement analysis session and export data."""
+    def finish_analysis_session(self, auto_export=True, text_reading_mode=False):
+        """Finish movement analysis session and export data"""
         if self.movement_analyzer:
-            csv_file = self.movement_analyzer.finish_analysis_session(auto_export)
+            if text_reading_mode:
+                # Use specialized text reading export
+                csv_file = self.movement_analyzer.export_text_reading_csv()
+            else:
+                # Use standard export
+                csv_file = self.movement_analyzer.finish_analysis_session(auto_export)
             return csv_file
         return None
     
     def predict_gaze_point(self, features):
-        """
-        Predict gaze coordinates from extracted features using multi-output XGBoost model.
-        
-        Args:
-            features: List of features [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll]
-            
-        Returns:
-            Tuple of (x, y) coordinates or None if prediction fails
-        """
-        if self.model is None or self.scaler is None:
+        """Predict gaze coordinates from extracted features"""
+        if self.model is None:
             print("No model loaded. Cannot make predictions.")
             return None
         
         try:
-            # Engineer features from raw input
-            if len(features) >= 7:
-                # Raw features: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll]
-                avg_norm_x = (features[0] + features[2]) / 2
-                avg_norm_y = (features[1] + features[3]) / 2
-                yaw, pitch, roll = features[4], features[5], features[6]
-                
-                # Create engineered features
-                engineered_features = np.array([[
-                    avg_norm_x, avg_norm_y, yaw, pitch, roll,
-                    avg_norm_x * yaw,      # x_yaw_interaction
-                    avg_norm_y * pitch     # y_pitch_interaction
-                ]])
-            else:
-                # Assume features are already engineered
-                engineered_features = np.array([features])
-            
-            # Scale features
-            scaled_features = self.scaler.transform(engineered_features)
-            
-            # Make prediction using multi-output model
-            prediction = self.model.predict(scaled_features)[0]
-            pred_x, pred_y = int(prediction[0]), int(prediction[1])
-            
-            return pred_x, pred_y
-            
+            # Use only the first 7 features (normalized iris positions + head pose)
+            prediction = self.model.predict([features[:7]])[0]
+            return int(prediction[0]), int(prediction[1])
         except Exception as e:
             print(f"Error during prediction: {str(e)}")
             return None
     
-    def smooth_prediction(self, x, y, alpha=0.3):
-        """
-        Apply exponential smoothing to predictions for stability.
+    def predict_gaze_point_with_kalman(self, features):
+        """Enhanced gaze prediction with adaptive Kalman filtering for better accuracy in text reading"""
+        # Get raw prediction first
+        raw_prediction = self.predict_gaze_point(features)
+        if not raw_prediction:
+            return None
         
-        Args:
-            x, y: Current prediction coordinates
-            alpha: Smoothing factor (0-1, lower = more smoothing)
+        raw_x, raw_y = raw_prediction
+        
+        # If movement analyzer is active and has Kalman filter, use it for enhancement
+        if self.analysis_enabled and self.movement_analyzer:
+            # Get Kalman prediction
+            kalman_prediction = self.movement_analyzer.predict_next_gaze()
             
-        Returns:
-            Tuple of smoothed (x, y) coordinates
-        """
-        if self.smoothed_x is None or self.smoothed_y is None:
-            self.smoothed_x = x
-            self.smoothed_y = y
-        else:
-            self.smoothed_x = alpha * x + (1 - alpha) * self.smoothed_x
-            self.smoothed_y = alpha * y + (1 - alpha) * self.smoothed_y
+            if kalman_prediction:
+                kalman_x, kalman_y = kalman_prediction
+                
+                # Adaptive blending based on reading context
+                current_movement_type = self.movement_analyzer.classify_movement_type()
+                
+                if current_movement_type == "Fixation":
+                    # During fixations, trust Kalman more for stability
+                    blend_factor = 0.4  # 40% Kalman, 60% raw
+                elif current_movement_type == "Saccade":
+                    # During saccades, trust raw prediction more for responsiveness
+                    blend_factor = 0.2  # 20% Kalman, 80% raw
+                else:  # Smooth pursuit
+                    # Balanced blending for smooth movements
+                    blend_factor = 0.3  # 30% Kalman, 70% raw
+                
+                # Enhanced blending with bounds checking
+                enhanced_x = int(raw_x * (1 - blend_factor) + kalman_x * blend_factor)
+                enhanced_y = int(raw_y * (1 - blend_factor) + kalman_y * blend_factor)
+                
+                # Ensure predictions stay within screen bounds
+                enhanced_x = max(0, min(self.calibrator.WINDOW_WIDTH - 1, enhanced_x))
+                enhanced_y = max(0, min(self.calibrator.WINDOW_HEIGHT - 1, enhanced_y))
+                
+                return enhanced_x, enhanced_y
         
-        return int(self.smoothed_x), int(self.smoothed_y)
+        # Fallback to raw prediction if Kalman not available
+        return raw_prediction
     
-    def run_real_time_prediction(self, enable_smoothing=True, smoothing_alpha=0.3):
-        """
-        Run real-time gaze prediction loop.
+    def apply_smoothing(self, pred_x, pred_y):
+        """Apply exponential smoothing to predictions"""
+        if self.smoothed_x is None:
+            self.smoothed_x, self.smoothed_y = pred_x, pred_y
+        else:
+            # Exponential moving average
+            self.smoothed_x = self.smoothed_x * (1 - self.calibrator.SMOOTHING_FACTOR) + pred_x * self.calibrator.SMOOTHING_FACTOR
+            self.smoothed_y = self.smoothed_y * (1 - self.calibrator.SMOOTHING_FACTOR) + pred_y * self.calibrator.SMOOTHING_FACTOR
         
-        Args:
-            enable_smoothing: Whether to apply smoothing to predictions
-            smoothing_alpha: Smoothing factor for exponential smoothing
-        """
-        if self.model is None:
-            print("No model loaded. Attempting to load default model...")
-            if not self.load_default_model():
-                print("No model loaded. Please load a model first.")
-                return
+        # Convert to integers and ensure coordinates are within bounds
+        smoothed_x_int = int(self.smoothed_x)
+        smoothed_y_int = int(self.smoothed_y)
+        smoothed_x_int = max(0, min(self.calibrator.WINDOW_WIDTH - 1, smoothed_x_int))
+        smoothed_y_int = max(0, min(self.calibrator.WINDOW_HEIGHT - 1, smoothed_y_int))
         
-        print("Starting real-time gaze prediction...")
-        print("Controls:")
-        print("  - ESC: Exit")
-        print("  - SPACE: Toggle movement analysis")
-        print("  - 's': Start/stop analysis session")
-        print("  - 'r': Reset smoothing")
-        
-        # Initialize camera directly
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            print("Failed to initialize camera")
+        return smoothed_x_int, smoothed_y_int
+    
+    def draw_head_pose_axis(self, image, rvec, tvec, cam_matrix):
+        """Draw 3D axis on the nose to visualize head pose"""
+        if rvec is None or tvec is None:
             return
         
-        # Set camera properties for better performance
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 30)
+        # Define 3D axis points (length in mm)
+        axis_length = 100
+        axis_points = np.array([
+            (0, 0, 0),                    # Origin (nose tip)
+            (axis_length, 0, 0),          # X-axis (red) - right
+            (0, axis_length, 0),          # Y-axis (green) - down
+            (0, 0, -axis_length)          # Z-axis (blue) - forward
+        ], dtype=np.float32)
         
-        print("Camera initialized successfully")
-        print("Press ESC to exit prediction...")
+        # Project 3D points to 2D image plane
+        projected_points, _ = cv2.projectPoints(
+            axis_points, rvec, tvec, cam_matrix, np.zeros((4, 1))
+        )
+        
+        # Convert to integer coordinates
+        projected_points = projected_points.reshape(-1, 2).astype(int)
+        
+        if len(projected_points) == 4:
+            origin = tuple(projected_points[0])
+            x_axis = tuple(projected_points[1])
+            y_axis = tuple(projected_points[2])
+            z_axis = tuple(projected_points[3])
+            
+            # Draw axis lines with different colors
+            cv2.line(image, origin, x_axis, (0, 0, 255), 3)  # X-axis: Red
+            cv2.line(image, origin, y_axis, (0, 255, 0), 3)  # Y-axis: Green
+            cv2.line(image, origin, z_axis, (255, 0, 0), 3)  # Z-axis: Blue
+            
+            # Add labels
+            cv2.putText(image, 'X', x_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            cv2.putText(image, 'Y', y_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(image, 'Z', z_axis, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+    
+    def create_text_window(self):
+        """Create multi-page window with reading text for text analysis mode"""
+        # Define the 4 pages of text content
+        pages = [
+            # Page 1
+            """Most pet owners are clear about the immediate joys that come with sharing their lives with companion animals.
+However, many of us remain unaware of the physical and mental health benefits that can also accompany the
+pleasure of snuggling up to a furry friend. It's only recently that studies have begun to scientifically explore the
+benefits of the human-animal bond.""",
+            
+            # Page 2
+            """Pets have evolved to become acutely attuned to humans and our behavior and emotions. Dogs, for example, are
+able to understand many of the words we use, but they're even better at interpreting our tone of voice, body
+language, and gestures. And like any good human friend, a loyal dog will look into your eyes to gauge your
+emotional state and try to understand what you're thinking and feeling (and to work out when the next walk or
+treat might be coming, of course).""",
+            
+            # Page 3
+            """Pets, especially dogs and cats, can reduce stress, anxiety, and depression, ease loneliness, encourage exercise
+and playfulness, and even improve your cardiovascular health. Caring for an animal can help children grow up
+more secure and active. Pets also provide valuable companionship for older adults. Perhaps most importantly,
+though, a pet can add real joy and unconditional love to your life.""",
+            
+            # Page 4
+            """Any pet can improve your health
+While it's true that people with pets often experience greater health benefits than those without, a pet doesn't
+necessarily have to be a dog or a cat. A rabbit could be ideal if you're allergic to other animals or have limited
+space but still want a furry friend to snuggle with. Birds can encourage social interaction and help keep your
+mind sharp if you're an older adult. Snakes, lizards, and other reptiles can make for exotic companions. Even
+watching fish in an aquarium can help reduce muscle tension and lower your pulse rate."""
+        ]
+        
+        # Create white background window
+        window = np.ones((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8) * 255
+        
+        # Calculate text area (70% of screen width, centered)
+        text_width = int(self.calibrator.WINDOW_WIDTH * 0.7)
+        text_height = int(self.calibrator.WINDOW_HEIGHT * 0.6)
+        
+        # Center the text area with slight downward offset for better visual balance
+        text_start_x = (self.calibrator.WINDOW_WIDTH - text_width) // 2
+        text_start_y = (self.calibrator.WINDOW_HEIGHT - text_height) // 2 + 50
+        
+        # Font settings
+        text_font = cv2.FONT_HERSHEY_DUPLEX
+        text_font_scale = 0.6
+        text_thickness = 1
+        color = (0, 0, 0)  # Black color
+        line_spacing = 35
+        
+        # Get current page text
+        current_text = pages[self.current_page]
+        
+        # Process and display text
+        y = text_start_y
+        words = current_text.split()
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + (" " if current_line else "") + word
+            text_size = cv2.getTextSize(test_line, text_font, text_font_scale, text_thickness)[0]
+            
+            if text_size[0] <= text_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    # Center the line within text area
+                    line_size = cv2.getTextSize(current_line, text_font, text_font_scale, text_thickness)[0]
+                    line_x = text_start_x + (text_width - line_size[0]) // 2
+                    cv2.putText(window, current_line, (line_x, y), text_font, text_font_scale, color, text_thickness)
+                    y += line_spacing
+                current_line = word
+        
+        # Draw the remaining text
+        if current_line:
+            line_size = cv2.getTextSize(current_line, text_font, text_font_scale, text_thickness)[0]
+            line_x = text_start_x + (text_width - line_size[0]) // 2
+            cv2.putText(window, current_line, (line_x, y), text_font, text_font_scale, color, text_thickness)
+        
+        # Draw navigation arrows and page info
+        self._draw_navigation(window)
+        
+        # Set text content for word detection if movement analyzer is active
+        if self.analysis_enabled and self.movement_analyzer:
+            self.movement_analyzer.set_text_content(
+                current_text, text_start_x, text_start_y, text_width, line_spacing, text_font_scale
+            )
+        
+        return window
+    
+    def _draw_navigation(self, window):
+        """Draw navigation arrows and page information"""
+        arrow_size = 30
+        arrow_y = self.calibrator.WINDOW_HEIGHT // 2
+        arrow_color = (100, 100, 100)  # Gray color
+        arrow_thickness = 3
+        
+        # Left arrow (if not on first page)
+        if self.current_page > 0:
+            left_arrow_x = 50
+            # Draw left arrow triangle
+            pts = np.array([[left_arrow_x + arrow_size, arrow_y - arrow_size//2],
+                           [left_arrow_x, arrow_y],
+                           [left_arrow_x + arrow_size, arrow_y + arrow_size//2]], np.int32)
+            cv2.fillPoly(window, [pts], arrow_color)
+        
+        # Right arrow (if not on last page)
+        if self.current_page < self.total_pages - 1:
+            right_arrow_x = self.calibrator.WINDOW_WIDTH - 50 - arrow_size
+            # Draw right arrow triangle
+            pts = np.array([[right_arrow_x, arrow_y - arrow_size//2],
+                           [right_arrow_x + arrow_size, arrow_y],
+                           [right_arrow_x, arrow_y + arrow_size//2]], np.int32)
+            cv2.fillPoly(window, [pts], arrow_color)
+        
+        # Page information
+        page_info = f"Page {self.current_page + 1} of {self.total_pages}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.6
+        thickness = 2
+        text_size = cv2.getTextSize(page_info, font, font_scale, thickness)[0]
+        page_x = (self.calibrator.WINDOW_WIDTH - text_size[0]) // 2
+        page_y = self.calibrator.WINDOW_HEIGHT - 50
+        cv2.putText(window, page_info, (page_x, page_y), font, font_scale, (50, 50, 50), thickness)
+    
+    def handle_page_navigation(self, key):
+        """Handle page navigation based on key press"""
+        key_code = key & 0xFF
+        
+        if key_code == ord('a') or key_code == ord('A'):  # A key - previous page
+            if self.current_page > 0:
+                self.current_page -= 1
+                return True
+        elif key_code == ord('d') or key_code == ord('D'):  # D key - next page
+            if self.current_page < self.total_pages - 1:
+                self.current_page += 1
+                return True
+        return False
+    
+    def real_time_prediction(self, mode="standard"):
+        """Real-time gaze prediction with mode selection"""
+        if self.model is None:
+            print("No model loaded. Cannot run real-time prediction.")
+            return
+        
+        print(f"--- Starting Real-Time Prediction (Mode: {mode}) ---")
+        print("Press 'q' to quit")
+        
+        window_name = 'Gaze Prediction' if mode == "standard" else 'Text Reading Analysis'
+        cv2.namedWindow(window_name, cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        # Setup camera
+        try:
+            cap = self.calibrator.setup_camera()
+        except Exception as e:
+            print(f"Error setting up camera: {str(e)}")
+            return
+        
+        # Load text window for text analysis mode
+        if mode == "text_analysis":
+            text_window = self.create_text_window()
+            if text_window is None:
+                print("Failed to create text window. Reverting to standard mode.")
+                mode = "standard"
+                text_window = None
+            else:
+                # ALWAYS enable movement analysis for text reading mode
+                print("📊 Automatic eye movement analysis enabled for text reading")
+                print("🔮 Enhanced Kalman filtering activated for improved accuracy")
+                self.enable_movement_analysis()
+                self.start_analysis_session()
+        else:
+            text_window = None
+        
+        # Reset smoothing
+        self.smoothed_x = None
+        self.smoothed_y = None
         
         try:
             while True:
-                # Capture frame
                 ret, frame = cap.read()
                 if not ret:
-                    print("Failed to read from camera")
                     break
                 
-                # Convert frame to RGB and process with MediaPipe
+                # Flip frame based on global flag
+                if not self.calibrator.FLIP_FRAME:
+                    frame = cv2.flip(frame, 1)
+                
                 rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                landmarks = self.calibrator.face_mesh.process(rgb_frame)
+                results = self.calibrator.face_mesh.process(rgb_frame)
                 
-                # Extract features using calibrator's feature extraction
-                result = self.calibrator.extract_iris_features(frame, landmarks)
+                # Monitor user compliance during prediction
+                if not self.calibrator.monitor_user_compliance(cap, results):
+                    print("Session aborted during real-time prediction")
+                    break
                 
-                if result:
-                    features, visualization_data = result
+                # Create or get the appropriate window
+                if mode == "standard":
+                    window = np.zeros((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8)
+                else:
+                    window = text_window.copy()
                 
-                if features:
-                    # Make prediction
-                    prediction = self.predict_gaze_point(features)
+                # Extract features and predict
+                result = self.calibrator.extract_iris_features(frame, results)
+                
+                # Extract pupil size and blink data for analysis
+                pupil_blink_data = self.calibrator.extract_pupil_and_blink_data(results)
+                
+                if result and self.model:
+                    features, (rotation_vector, translation_vector) = result
+                    
+                    # Add pupil size and blink data to movement analyzer if available
+                    if pupil_blink_data and self.analysis_enabled and self.movement_analyzer:
+                        pupil_size, is_blink = pupil_blink_data
+                        self.movement_analyzer.add_pupil_size(pupil_size)
+                        if is_blink:
+                            self.movement_analyzer.record_blink()
+                if result and self.model:
+                    features, (rotation_vector, translation_vector) = result
+                    
+                    # Use Kalman-enhanced prediction for text reading mode
+                    if mode == "text_analysis" and self.analysis_enabled:
+                        prediction = self.predict_gaze_point_with_kalman(features)
+                    else:
+                        prediction = self.predict_gaze_point(features)
                     
                     if prediction:
                         pred_x, pred_y = prediction
                         
-                        # Apply smoothing if enabled
-                        if enable_smoothing:
-                            pred_x, pred_y = self.smooth_prediction(pred_x, pred_y, smoothing_alpha)
+                        # Flip x-coordinate if frame is flipped to maintain mirror effect
+                        if not self.calibrator.FLIP_FRAME:
+                            pred_x = self.calibrator.WINDOW_WIDTH - pred_x
                         
-                        # Record movement if analysis is enabled
+                        # Apply smoothing
+                        smoothed_x_int, smoothed_y_int = self.apply_smoothing(pred_x, pred_y)
+                        
+                        # Add gaze point to movement analyzer if enabled
                         if self.analysis_enabled and self.movement_analyzer:
-                            self.movement_analyzer.record_gaze_point(pred_x, pred_y)
+                            self.movement_analyzer.add_gaze_point(smoothed_x_int, smoothed_y_int)
                         
-                        # Draw prediction on frame
-                        cv2.circle(frame, (pred_x, pred_y), 10, (0, 255, 0), -1)
-                        cv2.putText(frame, f"Gaze: ({pred_x}, {pred_y})", 
-                                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-                    else:
-                        cv2.putText(frame, "No prediction", 
-                                   (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                else:
-                    cv2.putText(frame, "No face detected", 
-                               (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                
-                # Add status information
-                status_y = 60
-                if self.analysis_enabled:
-                    cv2.putText(frame, "Analysis: ON", 
-                               (10, status_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-                    status_y += 25
-                
-                if enable_smoothing:
-                    cv2.putText(frame, f"Smoothing: {smoothing_alpha:.1f}", 
-                               (10, status_y), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-                
-                # Display frame
-                cv2.imshow('Real-time Gaze Prediction', frame)
-                
-                # Handle key presses
-                key = cv2.waitKey(1) & 0xFF
-                if key == 27:  # ESC
-                    break
-                elif key == ord(' '):  # Space - toggle analysis
-                    if self.analysis_enabled:
-                        self.disable_movement_analysis()
-                    else:
-                        self.enable_movement_analysis()
-                elif key == ord('s'):  # S - start/stop session
-                    if self.movement_analyzer:
-                        if hasattr(self.movement_analyzer, 'session_active') and self.movement_analyzer.session_active:
-                            csv_file = self.finish_analysis_session()
-                            if csv_file:
-                                print(f"📁 Session data exported to: {csv_file}")
+                        # Draw gaze point (smaller and semi-transparent in text mode)
+                        if mode == "text_analysis":
+                            # Create a separate layer for the semi-transparent dot
+                            overlay = window.copy()
+                            cv2.circle(overlay, (smoothed_x_int, smoothed_y_int), 8, (0, 0, 255), -1)
+                            cv2.addWeighted(overlay, 0.6, window, 0.4, 0, window)
                         else:
-                            self.start_analysis_session()
-                elif key == ord('r'):  # R - reset smoothing
-                    self.smoothed_x = None
-                    self.smoothed_y = None
-                    print("Smoothing reset")
+                            # Standard mode - larger, solid dot
+                            cv2.circle(window, (smoothed_x_int, smoothed_y_int), 15, (0, 0, 255), -1)
+                            
+                            # Draw head pose information (only in standard mode)
+                            if rotation_vector is not None and translation_vector is not None:
+                                h, w = frame.shape[:2]
+                                focal_length = w
+                                center = (w/2, h/2)
+                                camera_matrix = np.array([
+                                    [focal_length, 0, center[0]],
+                                    [0, focal_length, center[1]],
+                                    [0, 0, 1]
+                                ], dtype=np.float32)
+                                
+                                self.draw_head_pose_axis(window, rotation_vector, translation_vector, camera_matrix)
+                            
+                            # Display head pose values (only in standard mode)
+                            yaw, pitch, roll = features[4], features[5], features[6]
+                            cv2.putText(window, f"Yaw: {yaw:.2f}", (50, 100), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.putText(window, f"Pitch: {pitch:.2f}", (50, 130), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                            cv2.putText(window, f"Roll: {roll:.2f}", (50, 160), 
+                                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+                
+                # Add instructions in top-left corner
+                text_color = (0, 0, 0) if mode == "text_analysis" else (255, 255, 255)
+                if mode == "text_analysis":
+                    instruction_text = "Press 'q' to quit | 'A' previous page | 'D' next page"
+                else:
+                    instruction_text = "Press 'q' to quit"
+                cv2.putText(window, instruction_text, (20, 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.7, text_color, 2)
+                
+                cv2.imshow(window_name, window)
+                
+                key = cv2.waitKey(1)
+                key_code = key & 0xFF
+                
+                if key_code == ord('q'):
+                    break
+                elif mode == "text_analysis":
+                    # Handle page navigation with A/D keys only
+                    if key_code == ord('a') or key_code == ord('A'):  # A key - previous page
+                        if hasattr(self, 'current_page') and self.current_page > 0:
+                            self.current_page -= 1
+                            text_window = self.create_text_window()
+                            print(f"Moved to page {self.current_page + 1}")
+                    elif key_code == ord('d') or key_code == ord('D'):  # D key - next page
+                        if hasattr(self, 'current_page') and self.current_page < self.total_pages - 1:
+                            self.current_page += 1
+                            text_window = self.create_text_window()
+                            print(f"Moved to page {self.current_page + 1}")
         
         finally:
-            # Cleanup
             cap.release()
             cv2.destroyAllWindows()
             
-            # Finish any active analysis session
+            # Finish movement analysis session if it was active
             if self.analysis_enabled and self.movement_analyzer:
-                csv_file = self.finish_analysis_session()
+                print("\n🔬 Automatic eye movement analysis completed!")
+                # Use text reading export for text analysis mode
+                csv_file = self.finish_analysis_session(auto_export=True, text_reading_mode=(mode == "text_analysis"))
                 if csv_file:
-                    print(f"Final session data exported to: {csv_file}")
-            
-            print("Real-time prediction ended")
-
-def main():
-    """Main function for standalone prediction."""
-    # Initialize predictor and try to load default model
-    predictor = GazePredictor()
+                    if mode == "text_analysis":
+                        print(f"📊 Text reading data automatically saved to: {csv_file}")
+                        print("📖 Data includes: Fixation Order, Fixated Words, Screen Coordinates, Duration, etc.")
+                    else:
+                        print(f"📊 Eye movement data automatically saved to: {csv_file}")
+                        print("💡 This data is ready for model training!")
+                else:
+                    print("⚠️  No movement data was collected during this session")
+                self.disable_movement_analysis()
     
-    if predictor.load_default_model():
-        print("Default model loaded successfully")
-        predictor.run_real_time_prediction()
-    else:
-        print("Failed to load default model")
-        print("Please train a model first using the training module")
-        return
-    
-    if predictor.model is not None:
+    def run_prediction(self, model_path=None, mode="standard"):
+        """Run real-time prediction with specified model and mode"""
+        print("=== Gaze Prediction System ===")
+        
+        # Load model if provided
+        if model_path and model_path != self.model_path:
+            if not self.load_model(model_path):
+                print("Failed to load model. Cannot run prediction.")
+                return
+        
+        if self.model is None:
+            print("No model available. Please provide a model path or train a model first.")
+            return
+        
         # Run real-time prediction
-        predictor.run_real_time_prediction(enable_smoothing=True, smoothing_alpha=0.3)
-    else:
-        print("Failed to load model")
+        self.real_time_prediction(mode)
+        
+        print("=== Prediction Session Complete ===")
+    
+    def run_prediction_with_analysis(self, model_path=None, mode="text_analysis"):
+        """Run prediction with movement analysis enabled (defaults to text analysis mode)"""
+        print("=== Gaze Prediction System with Movement Analysis ===")
+        
+        # Load model if provided
+        if model_path and model_path != self.model_path:
+            if not self.load_model(model_path):
+                print("Failed to load model. Cannot run prediction.")
+                return
+        
+        if self.model is None:
+            print("No model available. Please provide a model path or train a model first.")
+            return
+        
+        # Force text analysis mode for data collection
+        if mode != "text_analysis":
+            print("⚠️  Switching to text_analysis mode for movement data collection")
+            mode = "text_analysis"
+        
+        # Run real-time prediction with analysis
+        self.real_time_prediction(mode)
+        
+        print("=== Prediction Session with Analysis Complete ===")
 
 if __name__ == "__main__":
-    main()
+    # Example usage
+    predictor = GazePredictor()
+    
+    # Load a trained model
+    model_path = "models/gaze_model_20250821_120000.joblib"  # Replace with actual path
+    
+    # DEFAULT: Text reading with automatic eye movement analysis
+    # This automatically collects movement data every time you read text
+    predictor.run_prediction(model_path, mode="text_analysis")
+    
+    # Alternative options:
+    # predictor.run_prediction(model_path, mode="standard")        # Standard mode (no text, no analysis)
+    # predictor.run_prediction_with_analysis(model_path)          # Explicit analysis mode (same as text_analysis)
