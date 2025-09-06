@@ -13,6 +13,7 @@ class GazePredictor:
         
         # Prediction-specific attributes
         self.model = None
+        self.scaler = None  # Add scaler attribute
         self.model_path = model_path
         self.smoothed_x = None
         self.smoothed_y = None
@@ -34,6 +35,7 @@ class GazePredictor:
         try:
             model_data = joblib.load(model_path)
             self.model = model_data['model']
+            self.scaler = model_data.get('scaler', None)  # Load the scaler!
             self.model_path = model_path
             print(f"Model loaded from: {model_path}")
             
@@ -42,6 +44,12 @@ class GazePredictor:
             if training_history:
                 test_error = training_history.get('test_mean_error', 'N/A')
                 print(f"Model test error: {test_error:.2f} pixels" if isinstance(test_error, float) else f"Model test error: {test_error}")
+            
+            # Confirm scaler loading
+            if self.scaler is not None:
+                print("✅ Feature scaler loaded successfully")
+            else:
+                print("⚠️ No scaler found in model file")
             
             return True
             
@@ -127,8 +135,15 @@ class GazePredictor:
             # Create engineered feature vector matching training format
             engineered_features = [avg_norm_x, avg_norm_y, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction]
             
-            # Make prediction with engineered features
-            prediction = self.model.predict([engineered_features])[0]
+            # Apply scaler if available (CRITICAL FIX!)
+            if self.scaler is not None:
+                engineered_features_scaled = self.scaler.transform([engineered_features])[0]
+            else:
+                print("⚠️ No scaler available - using unscaled features")
+                engineered_features_scaled = engineered_features
+            
+            # Make prediction with properly scaled features
+            prediction = self.model.predict([engineered_features_scaled])[0]
             return int(prediction[0]), int(prediction[1])
         except Exception as e:
             print(f"Error during prediction: {str(e)}")
