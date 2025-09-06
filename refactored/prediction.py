@@ -49,6 +49,26 @@ class GazePredictor:
             print(f"Error loading model: {str(e)}")
             return False
     
+    def load_default_model(self):
+        """Load the default model with fixed filename."""
+        # Try multiple possible locations for the model
+        possible_paths = [
+            "models/gaze_prediction_model.joblib",  # Local models directory
+            "../models/gaze_prediction_model.joblib",  # Parent directory models
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models", "gaze_prediction_model.joblib")  # Absolute path to parent models
+        ]
+        
+        for path in possible_paths:
+            if os.path.exists(path):
+                print(f"Found model at: {path}")
+                success = self.load_model(path)
+                if success:
+                    print(f"Model loading result: {success}")
+                    return True
+                
+        print("No default model found. Please train a model first.")
+        return False
+    
     def enable_movement_analysis(self, window_width=None, window_height=None):
         """Enable eye movement analysis during prediction"""
         if window_width is None:
