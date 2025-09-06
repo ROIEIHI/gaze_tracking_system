@@ -314,9 +314,30 @@ class GazeTrackingSystem:
                     messagebox.showinfo("Workflow Complete", 
                                        f"Complete workflow finished!\n"
                                        f"Model Error: {error:.2f} pixels\n"
-                                       f"Starting real-time prediction...")
+                                       f"Ready for prediction...")
                     
-                    predictor.run_real_time_prediction(enable_smoothing=True, smoothing_alpha=0.3)
+                    # Show prediction mode selection in terminal
+                    print("\n" + "="*50)
+                    print("COMPLETE WORKFLOW - PREDICTION MODE SELECTION")
+                    print("="*50)
+                    print("1. Simple Gaze Prediction (Black screen with red dot)")
+                    print("2. Advanced Text Analysis (Text reading with analysis)")
+                    print("="*50)
+                    
+                    while True:
+                        choice = input("Choose prediction mode (1 or 2): ").strip()
+                        if choice == "1":
+                            print("Starting Simple Gaze Prediction...")
+                            self.update_status("Running simple gaze prediction", "green")
+                            predictor.run_prediction(mode="standard")
+                            break
+                        elif choice == "2":
+                            print("Starting Advanced Text Analysis...")
+                            self.update_status("Running advanced text analysis", "green")
+                            predictor.run_prediction_with_analysis(mode="text_analysis")
+                            break
+                        else:
+                            print("Invalid choice. Please enter 1 or 2.")
                 else:
                     messagebox.showerror("Error", "Failed to load trained model.")
                 

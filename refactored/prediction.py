@@ -111,8 +111,24 @@ class GazePredictor:
             return None
         
         try:
-            # Use only the first 7 features (normalized iris positions + head pose)
-            prediction = self.model.predict([features[:7]])[0]
+            # Extract raw features: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll]
+            if len(features) < 7:
+                print(f"Insufficient features: got {len(features)}, need 7")
+                return None
+                
+            norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll = features[:7]
+            
+            # Apply the same feature engineering as in training
+            avg_norm_x = (norm_x_L + norm_x_R) / 2
+            avg_norm_y = (norm_y_L + norm_y_R) / 2
+            x_yaw_interaction = avg_norm_x * yaw
+            y_pitch_interaction = avg_norm_y * pitch
+            
+            # Create engineered feature vector matching training format
+            engineered_features = [avg_norm_x, avg_norm_y, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction]
+            
+            # Make prediction with engineered features
+            prediction = self.model.predict([engineered_features])[0]
             return int(prediction[0]), int(prediction[1])
         except Exception as e:
             print(f"Error during prediction: {str(e)}")
