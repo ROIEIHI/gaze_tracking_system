@@ -188,7 +188,7 @@ class GazeTrackingSystem:
             messagebox.showerror("Error", f"Training error: {str(e)}")
     
     def run_prediction(self):
-        """Run real-time prediction."""
+        """Run real-time prediction with choice between simple and advanced modes."""
         self.update_status("Starting prediction...", "blue")
         
         try:
@@ -198,8 +198,31 @@ class GazeTrackingSystem:
             # Create predictor and attempt to load default model
             predictor = GazePredictor()
             if predictor.load_default_model():
-                self.update_status("Running real-time prediction", "green")
-                predictor.run_real_time_prediction()
+                self.update_status("Model loaded successfully", "green")
+                
+                # Show prediction mode selection in terminal
+                print("\n" + "="*50)
+                print("GAZE PREDICTION MODE SELECTION")
+                print("="*50)
+                print("1. Simple Gaze Prediction (Black screen with red dot)")
+                print("2. Advanced Text Analysis (Text reading with analysis)")
+                print("="*50)
+                
+                while True:
+                    choice = input("Choose prediction mode (1 or 2): ").strip()
+                    if choice == "1":
+                        print("Starting Simple Gaze Prediction...")
+                        self.update_status("Running simple gaze prediction", "green")
+                        predictor.run_prediction(mode="standard")
+                        break
+                    elif choice == "2":
+                        print("Starting Advanced Text Analysis...")
+                        self.update_status("Running advanced text analysis", "green")
+                        predictor.run_prediction_with_analysis(mode="text_analysis")
+                        break
+                    else:
+                        print("Invalid choice. Please enter 1 or 2.")
+                        
             else:
                 # Fallback: let user browse for model file
                 self.update_status("Default model not found - please select file", "orange")
@@ -213,8 +236,28 @@ class GazeTrackingSystem:
                 )
                 
                 if model_path and predictor.load_model(model_path):
-                    self.update_status("Running real-time prediction", "green")
-                    predictor.run_real_time_prediction()
+                    # Show prediction mode selection in terminal
+                    print("\n" + "="*50)
+                    print("GAZE PREDICTION MODE SELECTION")
+                    print("="*50)
+                    print("1. Simple Gaze Prediction (Black screen with red dot)")
+                    print("2. Advanced Text Analysis (Text reading with analysis)")
+                    print("="*50)
+                    
+                    while True:
+                        choice = input("Choose prediction mode (1 or 2): ").strip()
+                        if choice == "1":
+                            print("Starting Simple Gaze Prediction...")
+                            self.update_status("Running simple gaze prediction", "green")
+                            predictor.run_prediction(mode="standard")
+                            break
+                        elif choice == "2":
+                            print("Starting Advanced Text Analysis...")
+                            self.update_status("Running advanced text analysis", "green")
+                            predictor.run_prediction_with_analysis(mode="text_analysis")
+                            break
+                        else:
+                            print("Invalid choice. Please enter 1 or 2.")
                 else:
                     self.update_status("Failed to load model", "red")
                     messagebox.showerror("Error", "No trained models found. Please train a model first.")
