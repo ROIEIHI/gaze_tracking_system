@@ -339,8 +339,21 @@ class GazeModelTrainer:
 
 def main():
     """Main function for standalone model training."""
-    # Example usage
-    csv_file = "calibration_data_20250828_110210.csv"
+    # Example usage - look for calibration data in the calibration_data directory
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    calibration_dir = os.path.join(os.path.dirname(script_dir), 'calibration_data')
+    
+    # Find the most recent calibration file
+    csv_file = None
+    if os.path.exists(calibration_dir):
+        csv_files = [f for f in os.listdir(calibration_dir) if f.startswith("calibration_data_") and f.endswith(".csv")]
+        if csv_files:
+            csv_files.sort(reverse=True)
+            csv_file = os.path.join(calibration_dir, csv_files[0])
+    
+    # Fallback to example file name if no files found
+    if not csv_file:
+        csv_file = "calibration_data_20250828_110210.csv"
     
     if not os.path.exists(csv_file):
         print(f"Calibration file not found: {csv_file}")

@@ -777,7 +777,10 @@ class EyeTrackerCalibrator:
         
         if filename is None:
             timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"calibration_data_{timestamp}.csv"
+            # Create calibration_data directory if it doesn't exist
+            calibration_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'calibration_data')
+            os.makedirs(calibration_dir, exist_ok=True)
+            filename = os.path.join(calibration_dir, f"calibration_data_{timestamp}.csv")
         
         df.to_csv(filename, index=False)
         print(f"Calibration data exported to {filename}")

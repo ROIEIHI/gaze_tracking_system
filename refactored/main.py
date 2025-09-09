@@ -139,19 +139,29 @@ class GazeTrackingSystem:
         """Train the gaze model."""
         self.update_status("Training model...", "blue")
         
-        # Get the current script directory
+        # Get the current script directory and calibration data directory
         script_dir = os.path.dirname(os.path.abspath(__file__))
+        calibration_dir = os.path.join(os.path.dirname(script_dir), 'calibration_data')
         
-        # Check for calibration data in script directory
-        csv_files = [f for f in os.listdir(script_dir) if f.startswith("calibration_data_") and f.endswith(".csv")]
+        # Check for calibration data in calibration_data directory first
+        csv_files = []
+        if os.path.exists(calibration_dir):
+            csv_files = [f for f in os.listdir(calibration_dir) if f.startswith("calibration_data_") and f.endswith(".csv")]
+            csv_files = [os.path.join(calibration_dir, f) for f in csv_files]  # Full paths
+        
+        # If no files in calibration_data directory, check script directory for backward compatibility
+        if not csv_files:
+            legacy_files = [f for f in os.listdir(script_dir) if f.startswith("calibration_data_") and f.endswith(".csv")]
+            csv_files = [os.path.join(script_dir, f) for f in legacy_files]
         
         if not csv_files:
             # If no calibration files found, let user browse for one
             self.update_status("No calibration data found - please select file", "orange")
+            initial_dir = calibration_dir if os.path.exists(calibration_dir) else script_dir
             csv_file = filedialog.askopenfilename(
                 title="Select Calibration Data File",
                 filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
-                initialdir=script_dir
+                initialdir=initial_dir
             )
             
             if not csv_file:
@@ -159,9 +169,9 @@ class GazeTrackingSystem:
                 messagebox.showerror("Error", "No calibration data selected. Please run calibration first or select a calibration file.")
                 return
         else:
-            # Use the most recent calibration file
+            # Use the most recent calibration file (csv_files already contains full paths)
             csv_files.sort(reverse=True)
-            csv_file = os.path.join(script_dir, csv_files[0])
+            csv_file = csv_files[0]
             print(f"Using calibration file: {csv_file}")
         
         try:

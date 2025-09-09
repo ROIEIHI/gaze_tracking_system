@@ -37,6 +37,7 @@ Thumbs.db
 
 # Project specific
 calibration_data_*.csv
+calibration_data/*.csv
 gaze_model_*.joblib
 *.pkl
 *.joblib
