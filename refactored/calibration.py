@@ -11,9 +11,9 @@ from collections import deque
 class EyeTrackerCalibrator:
     def __init__(self):
         # Constants
-        self.WINDOW_WIDTH = 1080
-        self.WINDOW_HEIGHT = 720
-        self.CAPTURE_FRAMES = 10
+        self.WINDOW_WIDTH = 1080    
+        self.WINDOW_HEIGHT = 720  
+        self.CAPTURE_FRAMES = 15
         self.SMOOTHING_FACTOR = 0.2
         self.FLIP_FRAME = False  # Global flag to control frame flipping
         
@@ -22,10 +22,10 @@ class EyeTrackerCalibrator:
         os.makedirs(self.assets_dir, exist_ok=True)
         
         # Boundary box for user positioning (normalized coordinates)
-        self.BOUNDARY_LEFT = 0.375
-        self.BOUNDARY_RIGHT = 0.625
-        self.BOUNDARY_TOP = 0.3
-        self.BOUNDARY_BOTTOM = 0.7
+        self.BOUNDARY_LEFT = 0.35
+        self.BOUNDARY_RIGHT = 0.65
+        self.BOUNDARY_TOP = 0.2
+        self.BOUNDARY_BOTTOM = 0.8
         
         # Initialize MediaPipe
         self.mp_face_mesh = mp.solutions.face_mesh

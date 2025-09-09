@@ -146,11 +146,10 @@ class GazeModelTrainer:
         
         # Define parameter grid for RandomForestRegressor GridSearchCV
         param_grid = {
-            'n_estimators': [100, 200, 300],
-            'max_depth': [5, 10, 15, None],
-            'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
-            'max_features': ['sqrt', 'log2', None]
+            'n_estimators': [300, 350, 400],
+            'max_depth': [8, 10, 12],
+            'min_samples_split': [1, 2, 3],
+            'min_samples_leaf': [1, 2, 3],
         }
         
         # Create multi-output RandomForest regressor

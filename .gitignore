@@ -44,6 +44,13 @@ test_*.py
 debug_*.py
 fail/
 
+# Data files that shouldn't be in version control
+movement_data/
+eye_movement_data_*.csv
+analyze_calibration.py
+comprehensive_debug.py
+diagnose_prediction.py
+
 # Temporary files
 *.tmp
 *.log
