@@ -553,7 +553,7 @@ class EyeTrackerCalibrator:
             label = "Target Area"
         
         cv2.rectangle(image, (left, top), (right, bottom), color, 3)
-        cv2.putText(image, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(image, text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 0), 2)
         cv2.putText(image, label, (left, top - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1)
 
     def draw_face_bounding_box(self, image, landmarks, color=(0, 255, 255)):
@@ -657,6 +657,55 @@ class EyeTrackerCalibrator:
         cv2.destroyAllWindows()
         return True
 
+    def show_calibration_instructions(self):
+        """Show calibration instructions window before starting calibration"""
+        # Create black instruction window
+        instruction_window = np.zeros((self.WINDOW_HEIGHT, self.WINDOW_WIDTH, 3), dtype=np.uint8)
+        cv2.namedWindow('Calibration Instructions', cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty('Calibration Instructions', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        print("--- Showing Calibration Instructions ---")
+        
+        while True:
+            # Clear window (black background)
+            instruction_window.fill(0)
+            
+            # Title
+            title_text = "Calibration"
+            title_size = cv2.getTextSize(title_text, cv2.FONT_HERSHEY_SIMPLEX, 2.0, 3)[0]
+            title_x = (self.WINDOW_WIDTH - title_size[0]) // 2
+            title_y = self.WINDOW_HEIGHT // 3
+            cv2.putText(instruction_window, title_text, (title_x, title_y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 2.0, (255, 255, 255), 3)
+            
+            # Instructions
+            instruction_text1 = "Click on the red circles and keep your gaze stable"
+            instruction_size1 = cv2.getTextSize(instruction_text1, cv2.FONT_HERSHEY_SIMPLEX, 1.0, 2)[0]
+            instruction_x1 = (self.WINDOW_WIDTH - instruction_size1[0]) // 2
+            instruction_y1 = title_y + 100
+            cv2.putText(instruction_window, instruction_text1, (instruction_x1, instruction_y1), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
+            
+            # Continue instruction
+            continue_text = "Press Enter to continue"
+            continue_size = cv2.getTextSize(continue_text, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)[0]
+            continue_x = (self.WINDOW_WIDTH - continue_size[0]) // 2
+            continue_y = instruction_y1 + 80
+            cv2.putText(instruction_window, continue_text, (continue_x, continue_y), 
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+            
+            cv2.imshow('Calibration Instructions', instruction_window)
+            
+            key = cv2.waitKey(1) & 0xFF
+            if key == 13:  # Enter key
+                break
+            elif key == 27:  # Escape key
+                cv2.destroyWindow('Calibration Instructions')
+                return False
+                
+        cv2.destroyWindow('Calibration Instructions')
+        return True
+
     def mouse_callback(self, event, x, y, flags, param):
         """Mouse callback for calibration target clicks"""
         if event == cv2.EVENT_LBUTTONDOWN:
@@ -692,10 +741,10 @@ class EyeTrackerCalibrator:
             
             # Show capture animation
             window.fill(0)
-            radius = int(30 - (frame_idx / self.CAPTURE_FRAMES) * 20)
+            radius = int(20 - (frame_idx / self.CAPTURE_FRAMES) * 20)
             cv2.circle(window, (target_x, target_y), radius, (0, 0, 255), -1)
-            cv2.putText(window, f"Capturing... {frame_idx + 1}/{self.CAPTURE_FRAMES}", 
-                       (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            #cv2.putText(window, f"Capturing... {frame_idx + 1}/{self.CAPTURE_FRAMES}", 
+                       #(50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
             
             cv2.imshow('Calibration', window)
             cv2.waitKey(100)
@@ -719,17 +768,6 @@ class EyeTrackerCalibrator:
             # Draw target
             cv2.circle(window, (target_x, target_y), 30, (0, 0, 255), -1)
             cv2.circle(window, (target_x, target_y), 35, (255, 255, 255), 2)
-            
-            cv2.putText(window, f"Click the red circle ({i + 1}/{total_targets})", 
-                       (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            cv2.putText(window, f"Target: {target_label}", 
-                       (50, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (200, 200, 200), 2)
-            
-            # Progress bar
-            progress_width = 400
-            progress_fill = int((i / total_targets) * progress_width)
-            cv2.rectangle(window, (50, 120), (450, 140), (100, 100, 100), 2)
-            cv2.rectangle(window, (50, 120), (50 + progress_fill, 140), (0, 255, 0), -1)
             
             # Mouse callback
             mouse_data = {'target': (target_x, target_y), 'clicked': False}
@@ -798,6 +836,11 @@ class EyeTrackerCalibrator:
                 print("Calibration cancelled during positioning phase")
                 return None
             
+            # Show calibration instructions
+            if not self.show_calibration_instructions():
+                print("Calibration cancelled during instruction phase")
+                return None
+            
             # Calibration process
             if not self.calibration_process(cap):
                 print("Calibration cancelled during calibration phase")
@@ -824,6 +867,11 @@ class EyeTrackerCalibrator:
             # User positioning phase
             if not self.user_positioning_phase(cap):
                 print("Calibration cancelled during positioning phase")
+                return None
+            
+            # Show calibration instructions
+            if not self.show_calibration_instructions():
+                print("Calibration cancelled during instruction phase")
                 return None
             
             # Calibration process
