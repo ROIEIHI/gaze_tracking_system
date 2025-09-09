@@ -350,11 +350,8 @@ def main():
         if csv_files:
             csv_files.sort(reverse=True)
             csv_file = os.path.join(calibration_dir, csv_files[0])
-    
-    # Fallback to example file name if no files found
-    if not csv_file:
-        csv_file = "calibration_data_20250828_110210.csv"
-    
+
+
     if not os.path.exists(csv_file):
         print(f"Calibration file not found: {csv_file}")
         print("Please run calibration first or provide correct path.")
