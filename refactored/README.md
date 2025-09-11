@@ -44,14 +44,15 @@ python main.py
 - **Real-Time Prediction**: Use trained model for live gaze tracking
 - **Complete Workflow**: Run all steps in sequence
 
-## Setup Scripts (Local Use Only)
+## Setup Scripts
 
-For new installations, the following helper scripts are available:
-- `setup_environment.py` - Comprehensive setup for new computers
-- `requirements.txt` - Package dependencies list
+For new installations, the following helper scripts are available in the repository:
+- `setup_environment.py` - Comprehensive automated setup for new computers
+- `requirements.txt` - Package dependencies list  
 - `validate_setup.py` - System validation tool
+- `SETUP_SUMMARY.md` - Detailed documentation of the setup system
 
-*Note: These setup scripts are for local use and are not included in the repository.*
+**Recommended**: Use `python setup_environment.py` for hassle-free installation on new systems.
 
 ## Project Structure
 
