@@ -27,6 +27,12 @@ class GazePredictor:
         self.current_page = 0
         self.total_pages = 4
         
+        # Pitch baseline for vertical accuracy correction
+        self.pitch_baseline = None
+        
+        # Model compatibility flags
+        self.model_uses_pitch_adj = False  # Default to legacy behavior
+        
         # Load model if path provided
         if model_path:
             self.load_model(model_path)
@@ -45,6 +51,13 @@ class GazePredictor:
             if not self.saved_feature_columns:
                 print("❌ Missing feature_columns in model file. Retrain with model_training.py to embed schema.")
                 return False
+            
+            # Check if model uses pitch adjustment
+            self.model_uses_pitch_adj = model_data.get('uses_pitch_adj', False)
+            if self.model_uses_pitch_adj:
+                print("📐 Model uses calibration-time pitch adjustment")
+            else:
+                print("📐 Model uses legacy prediction-time pitch baseline")
             
             if self.scaler is None:
                 print("❌ Missing scaler in model file. Retrain so scaler is saved.")
@@ -130,6 +143,48 @@ class GazePredictor:
             return csv_file
         return None
     
+    def measure_pitch_baseline(self, cap, seconds=1.5, min_samples=30):
+        """
+        Collect pitch samples while the user fixates the screen center.
+        Compute median pitch and store in self.pitch_baseline.
+        Return True/False for success.
+        """
+        import time
+        
+        print(f"📏 Measuring pitch baseline for {seconds} seconds...")
+        pitch_samples = []
+        start_time = time.time()
+        
+        while time.time() - start_time < seconds:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+                
+            # Flip frame based on global flag (consistent with main prediction)
+            if not self.calibrator.FLIP_FRAME:
+                frame = cv2.flip(frame, 1)
+                
+            # Convert to RGB for MediaPipe
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.calibrator.face_mesh.process(rgb_frame)
+            
+            # Extract features if face is detected
+            result = self.calibrator.extract_iris_features(frame, results)
+            if result:
+                features, _ = result
+                if len(features) >= 7:
+                    pitch = features[5]  # pitch is at index 5
+                    pitch_samples.append(pitch)
+        
+        # Check if we have enough samples
+        if len(pitch_samples) >= min_samples:
+            self.pitch_baseline = np.median(pitch_samples)
+            print(f"✅ Pitch baseline established: {self.pitch_baseline:.2f}° ({len(pitch_samples)} samples)")
+            return True
+        else:
+            print(f"⚠️ Insufficient pitch samples ({len(pitch_samples)}/{min_samples}). Proceeding without baseline.")
+            return False
+    
     def predict_gaze_point(self, features):
         """Predict gaze coordinates from extracted features"""
         if self.model is None:
@@ -144,8 +199,35 @@ class GazePredictor:
                 
             norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll = features[:7]
             
-            # Build engineered DataFrame using shared function
-            eng_df, _ = assemble_features_from_row(norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll)
+            # Handle pitch adjustment based on model type
+            if self.model_uses_pitch_adj:
+                # New models: use calibration-time baseline (no additional adjustment needed)
+                pitch_adjusted = pitch
+                if hasattr(self, 'pitch_baseline') and self.pitch_baseline is not None:
+                    # If we have a baseline from legacy measurement, still use it
+                    pitch_adjusted = pitch - self.pitch_baseline
+            else:
+                # Legacy models: apply prediction-time baseline correction
+                pitch_adjusted = pitch
+                if hasattr(self, 'pitch_baseline') and self.pitch_baseline is not None:
+                    pitch_adjusted = pitch - self.pitch_baseline
+            
+            # Debug diagnostics for pitch adjustment
+            if os.environ.get('DEBUG_FEATURES', '0') == '1':
+                if hasattr(self, 'pitch_baseline') and self.pitch_baseline is not None:
+                    if not hasattr(self, '_debug_pitch_printed'):
+                        print(f"🎯 Pitch baseline: {self.pitch_baseline:.2f}°")
+                        print(f"📐 Model uses pitch_adj: {self.model_uses_pitch_adj}")
+                        self._debug_pitch_printed = True
+                    print(f"📐 Pitch: raw={pitch:.2f}°, adjusted={pitch_adjusted:.2f}°")
+            
+            # Build engineered DataFrame - use pitch_adjusted for models with pitch_adj
+            if self.model_uses_pitch_adj:
+                # Use adjusted pitch with proper column name
+                eng_df, _ = assemble_features_from_row(norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch_adjusted, roll, pitch_baseline=0.0)
+            else:
+                # Legacy: use original pitch (baseline already applied above)
+                eng_df, _ = assemble_features_from_row(norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch_adjusted, roll)
             
             # Use model's saved order exclusively
             cols = self.saved_feature_columns
@@ -241,10 +323,20 @@ class GazePredictor:
         # Convert to integers and ensure coordinates are within bounds
         smoothed_x_int = int(self.smoothed_x)
         smoothed_y_int = int(self.smoothed_y)
-        smoothed_x_int = max(0, min(self.calibrator.WINDOW_WIDTH - 1, smoothed_x_int))
-        smoothed_y_int = max(0, min(self.calibrator.WINDOW_HEIGHT - 1, smoothed_y_int))
         
-        return smoothed_x_int, smoothed_y_int
+        # Apply bounds clamping with optional diagnostics
+        clamped_x = max(0, min(self.calibrator.WINDOW_WIDTH - 1, smoothed_x_int))
+        clamped_y = max(0, min(self.calibrator.WINDOW_HEIGHT - 1, smoothed_y_int))
+        
+        # Debug diagnostics for Y clamping
+        if os.environ.get('DEBUG_CLAMP', '0') == '1':
+            if clamped_y != smoothed_y_int:
+                if clamped_y == 0:
+                    print(f"🔒 Y clamped to top: {smoothed_y_int} -> 0")
+                elif clamped_y == self.calibrator.WINDOW_HEIGHT - 1:
+                    print(f"🔒 Y clamped to bottom: {smoothed_y_int} -> {self.calibrator.WINDOW_HEIGHT - 1}")
+        
+        return clamped_x, clamped_y
     
     def draw_head_pose_axis(self, image, rvec, tvec, cam_matrix):
         """Draw 3D axis on the nose to visualize head pose"""
@@ -423,6 +515,34 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
                 return True
         return False
     
+    def _show_baseline_prompt(self, cap):
+        """Show a prompt for pitch baseline measurement"""
+        import time
+        
+        # Create a full-screen window with centered prompt
+        prompt_window = np.zeros((self.calibrator.WINDOW_HEIGHT, self.calibrator.WINDOW_WIDTH, 3), dtype=np.uint8)
+        
+        # Draw centered dot
+        center_x = self.calibrator.WINDOW_WIDTH // 2
+        center_y = self.calibrator.WINDOW_HEIGHT // 2
+        cv2.circle(prompt_window, (center_x, center_y), 20, (0, 255, 0), -1)
+        
+        # Add instructional text
+        text = "Please look at the center for 2 seconds (vertical baseline)"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.2
+        thickness = 2
+        text_size = cv2.getTextSize(text, font, font_scale, thickness)[0]
+        text_x = (self.calibrator.WINDOW_WIDTH - text_size[0]) // 2
+        text_y = center_y - 100
+        
+        cv2.putText(prompt_window, text, (text_x, text_y), font, font_scale, (255, 255, 255), thickness)
+        
+        # Show the prompt
+        cv2.imshow('Gaze Prediction', prompt_window)
+        cv2.waitKey(1)
+        time.sleep(0.5)  # Brief pause to let user see the prompt
+    
     def real_time_prediction(self, mode="standard"):
         """Real-time gaze prediction with mode selection"""
         if self.model is None:
@@ -442,6 +562,14 @@ watching fish in an aquarium can help reduce muscle tension and lower your pulse
         except Exception as e:
             print(f"Error setting up camera: {str(e)}")
             return
+        
+        # Handle pitch baseline measurement based on model type
+        if not self.model_uses_pitch_adj:
+            # Legacy models: measure pitch baseline for vertical accuracy correction
+            self._show_baseline_prompt(cap)
+            self.measure_pitch_baseline(cap)
+        else:
+            print("📐 Model uses calibration-time pitch baseline. No additional measurement needed.")
         
         # Load text window for text analysis mode
         if mode == "text_analysis":

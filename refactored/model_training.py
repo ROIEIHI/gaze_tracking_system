@@ -58,8 +58,11 @@ class GazeModelTrainer:
         """Preprocess the calibration data by removing outliers."""
         print("Preprocessing calibration data...")
         
+        # Handle both old and new CSV formats
+        pitch_column = 'pitch' if 'pitch' in df.columns else 'pitch_adj'  # Prefer 'pitch', fallback to legacy
+        
         # Remove outliers using IQR method for each numeric column
-        numeric_columns = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', 'pitch', 'roll']
+        numeric_columns = ['norm_x_L', 'norm_y_L', 'norm_x_R', 'norm_y_R', 'yaw', pitch_column, 'roll']
         
         for col in numeric_columns:
             if col in df.columns:
@@ -271,7 +274,8 @@ class GazeModelTrainer:
             'training_history': self.training_history,
             'feature_columns': FEATURE_COLUMNS, # exact order
             'target_columns': ['target_x', 'target_y'],
-            'model_type': 'randomforest_multi_output'
+            'model_type': 'randomforest_multi_output',
+            'uses_pitch_adj': True  # Flag to indicate this model uses baseline-adjusted pitch (now as 'pitch')
         }
         
         # Save model
@@ -298,6 +302,18 @@ class GazeModelTrainer:
         df = self.load_calibration_data(csv_file)
         if df is None:
             return None
+        
+        # Validate presence of pitch; handle backward compatibility
+        if 'pitch' not in df.columns:
+            if 'pitch_adj' in df.columns:
+                print("Using legacy pitch_adj column as pitch...")
+                df['pitch'] = df['pitch_adj']
+            elif 'pitch_raw' in df.columns and 'pitch_baseline' in df.columns:
+                print("Computing pitch from pitch_raw and pitch_baseline...")
+                df['pitch'] = df['pitch_raw'] - df['pitch_baseline']
+            else:
+                print("❌ No pitch information found in CSV. Cannot train model.")
+                return None
         
         # Preprocess data
         df = self.preprocess_data(df)

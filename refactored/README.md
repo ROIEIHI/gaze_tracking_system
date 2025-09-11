@@ -4,7 +4,7 @@
 
 A highly efficient gaze tracking system using advanced machine learning techniques for accurate real-time gaze prediction.
 
-## 🎯 Features
+## Features
 
 - **Multi-Output XGBoost Model**: Single model predicting both X and Y coordinates simultaneously
 - **Euclidean Distance Optimization**: Custom scorer for minimizing spatial prediction error
@@ -14,25 +14,46 @@ A highly efficient gaze tracking system using advanced machine learning techniqu
 - **21-Point Calibration**: Comprehensive calibration system using MediaPipe
 - **Streamlined Workflow**: Complete pipeline from calibration to prediction
 
-## 🚀 Quick Start
+## Quick Start
 
-### 1. Installation
+### 1. First-Time Setup (New Computer)
+```bash
+# Download and run the setup script
+python setup_environment.py
+```
+This script will:
+- Check Python version compatibility (3.8+)
+- Install all required packages automatically
+- Test camera and MediaPipe functionality
+- Create necessary directory structure
+- Verify installation
+
+### 2. Manual Installation (Alternative)
 ```bash
 pip install xgboost scikit-learn pandas numpy opencv-python mediapipe joblib
 ```
 
-### 2. Run the System
+### 3. Run the System
 ```bash
 python main.py
 ```
 
-### 3. Choose Your Workflow
-- **📍 Run Calibration**: Collect training data (21-point calibration)
-- **🤖 Train Model**: Build optimized XGBoost model
-- **🎯 Real-Time Prediction**: Use trained model for live gaze tracking
-- **⚡ Complete Workflow**: Run all steps in sequence
+### 4. Choose Your Workflow
+- **Run Calibration**: Collect training data (21-point calibration)
+- **Train Model**: Build optimized XGBoost model
+- **Real-Time Prediction**: Use trained model for live gaze tracking
+- **Complete Workflow**: Run all steps in sequence
 
-## 📁 Project Structure
+## Setup Scripts (Local Use Only)
+
+For new installations, the following helper scripts are available:
+- `setup_environment.py` - Comprehensive setup for new computers
+- `requirements.txt` - Package dependencies list
+- `validate_setup.py` - System validation tool
+
+*Note: These setup scripts are for local use and are not included in the repository.*
+
+## Project Structure
 
 ```
 refactored/
@@ -47,7 +68,7 @@ refactored/
 └── assets/                    # UI assets
 ```
 
-## 🔧 Core Components
+## Core Components
 
 ### 1. Calibration System (`calibration.py`)
 - MediaPipe-based facial landmark detection

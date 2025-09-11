@@ -40,6 +40,9 @@ class EyeTrackerCalibrator:
         # Data storage
         self.calibration_data = []
         
+        # Session pitch baseline for consistent adjustment
+        self.session_pitch_baseline = None
+        
         # Monitoring thresholds
         self.FACE_DETECTION_THRESHOLD = 0.85
         self.session_paused = False
@@ -56,6 +59,87 @@ class EyeTrackerCalibrator:
         self.previous_eye_openness = None
         self.blink_threshold = 0.2  # Lower threshold for more sensitive blink detection
         self.eye_openness_history = deque(maxlen=5)  # Track recent eye openness values
+        
+    def measure_pitch_baseline(self, cap, min_samples=60):
+        """
+        Measure pitch baseline by showing a center dot and waiting for user click.
+        Collects exactly 60 frames after click and averages them.
+        Returns the median pitch value to be used as session baseline.
+        """
+        print(f"📏 Measuring pitch baseline for vertical accuracy...")
+        
+        # Create fullscreen window for baseline measurement
+        cv2.namedWindow('Calibration', cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty('Calibration', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        
+        # Set up mouse callback for click detection
+        mouse_clicked = [False]
+        
+        def mouse_callback(event, x, y, flags, param):
+            if event == cv2.EVENT_LBUTTONDOWN:
+                mouse_clicked[0] = True
+        
+        cv2.setMouseCallback('Calibration', mouse_callback)
+        
+        # Show instruction screen first
+        instruction_window = np.zeros((self.WINDOW_HEIGHT, self.WINDOW_WIDTH, 3), dtype=np.uint8)
+        center_x = self.WINDOW_WIDTH // 2
+        center_y = self.WINDOW_HEIGHT // 2
+        
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 1.5
+        thickness = 3
+        line_height = 60
+        
+        # Draw center dot
+        cv2.circle(instruction_window, (center_x, center_y), 20, (0, 255, 0), -1)
+        
+        # Wait for user click
+        print("   Waiting for user to click to start baseline measurement...")
+        while not mouse_clicked[0]:
+            cv2.imshow('Calibration', instruction_window)
+            key = cv2.waitKey(1) & 0xFF
+            if key == 27:  # ESC key
+                return None
+        
+        print(f"   Collecting {min_samples} frames for baseline measurement...")
+        
+        # Collect exactly min_samples frames after click
+        pitch_samples = []
+        frames_collected = 0
+        
+        # Create measurement window with progress
+        while frames_collected < min_samples:
+            ret, frame = cap.read()
+            if not ret:
+                continue
+                
+            # Flip frame based on global flag
+            if not self.FLIP_FRAME:
+                frame = cv2.flip(frame, 1)
+                
+            # Convert to RGB for MediaPipe
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = self.face_mesh.process(rgb_frame)
+            
+            # Extract features if face is detected
+            result = self.extract_iris_features(frame, results)
+            if result:
+                features, _ = result
+                if len(features) >= 7:
+                    pitch = features[5]  # Pitch is at index 5
+                    pitch_samples.append(pitch)
+                    frames_collected += 1
+                    
+                    cv2.waitKey(1)
+        
+        if pitch_samples:
+            baseline = np.median(pitch_samples)  # Use median instead of mean for robustness
+            print(f"✅ Pitch baseline established: {baseline:.2f}° ({len(pitch_samples)} samples)")
+            return baseline
+        else:
+            print("   ⚠️ No valid pitch values collected, using 0.0")
+            return 0.0
         
     def extract_pupil_and_blink_data(self, landmarks):
         """Extract pupil size and detect blinks from facial landmarks"""
@@ -737,7 +821,16 @@ class EyeTrackerCalibrator:
             result = self.extract_iris_features(frame, results)
             if result:
                 features, _ = result
-                captured_features.append(features + [target_x, target_y])
+                # features: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch_raw, roll]
+                norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch_raw, roll = features
+                
+                # Compute adjusted pitch (will be saved as 'pitch')
+                pitch = pitch_raw - self.session_pitch_baseline if self.session_pitch_baseline is not None else pitch_raw
+                
+                # Store: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll, target_x, target_y]
+                row_data = [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll,
+                           target_x, target_y]
+                captured_features.append(row_data)
             
             # Show capture animation
             window.fill(0)
@@ -825,28 +918,35 @@ class EyeTrackerCalibrator:
         return filename
 
     def run_calibration(self):
-        """Run the complete calibration process"""
+        """Run the complete calibration process with proper flow"""
         print("=== Eye Tracking Calibration ===")
         
         try:
+            # Step 1: Setup camera and video preview
             cap = self.setup_camera()
             
-            # User positioning phase
+            # Step 2: User positioning phase (video preview)
             if not self.user_positioning_phase(cap):
                 print("Calibration cancelled during positioning phase")
                 return None
             
-            # Show calibration instructions
+            # Step 3: Show start calibration message
             if not self.show_calibration_instructions():
                 print("Calibration cancelled during instruction phase")
                 return None
             
-            # Calibration process
+            # Step 4: Measure pitch baseline with mouse click + 60 frames
+            self.session_pitch_baseline = self.measure_pitch_baseline(cap, min_samples=60)
+            if self.session_pitch_baseline is None:
+                print("Baseline measurement cancelled")
+                return None
+            
+            # Step 5: Run calibration loop with 21 targets
             if not self.calibration_process(cap):
                 print("Calibration cancelled during calibration phase")
                 return None
             
-            # Export data
+            # Step 6: Export data
             filename = self.export_calibration_data()
             
             cap.release()

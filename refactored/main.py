@@ -1,6 +1,6 @@
 """
 Streamlined Gaze Tracking System Main Interface
-Multi-Output XGBoost Implementation
+Multi-Output RandomForest Regressor Implementation
 """
 
 import os
@@ -35,7 +35,7 @@ class GazeTrackingSystem:
         
         # Subtitle
         subtitle_label = tk.Label(self.root, 
-                                 text="Multi-Output XGBoost Implementation", 
+                                 text="Multi-Output RandomForest Regressor Implementation", 
                                  font=("Arial", 12),
                                  fg="gray")
         subtitle_label.pack(pady=5)
@@ -104,7 +104,7 @@ class GazeTrackingSystem:
         info_text.pack(pady=10)
         info_text.insert(tk.END, 
                         "🔹 Calibration: Collect training data using 21-point calibration\n"
-                        "🔹 Train Model: Build multi-output XGBoost model with Euclidean optimization\n"
+                        "🔹 Train Model: Build multi-output RandomForest Regressor model with Euclidean optimization\n"
                         "🔹 Real-Time Prediction: Use trained model for live gaze tracking\n"
                         "🔹 Complete Workflow: Run calibration → training → prediction in sequence\n\n"
                         "💡 The system uses advanced feature engineering and data augmentation\n"
