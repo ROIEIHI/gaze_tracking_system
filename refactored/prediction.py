@@ -5,6 +5,7 @@ import joblib
 import os
 from calibration import EyeTrackerCalibrator
 from eye_movement_analyzer import EyeMovementAnalyzer
+from utils.features import assemble_features_from_row, FEATURE_COLUMNS
 
 class GazePredictor:
     def __init__(self, model_path=None):
@@ -38,6 +39,23 @@ class GazePredictor:
             self.scaler = model_data.get('scaler', None)  # Load the scaler!
             self.model_path = model_path
             print(f"Model loaded from: {model_path}")
+            
+            # Strict schema validation - fail fast on drift
+            self.saved_feature_columns = model_data.get('feature_columns')
+            if not self.saved_feature_columns:
+                print("❌ Missing feature_columns in model file. Retrain with model_training.py to embed schema.")
+                return False
+            
+            if self.scaler is None:
+                print("❌ Missing scaler in model file. Retrain so scaler is saved.")
+                return False
+                
+            if hasattr(self.scaler, 'n_features_in_') and self.scaler.n_features_in_ != len(self.saved_feature_columns):
+                print(f"❌ Scaler/input dimension mismatch: scaler expects {self.scaler.n_features_in_} vs saved schema {len(self.saved_feature_columns)}. Retrain.")
+                return False
+                
+            if self.saved_feature_columns != FEATURE_COLUMNS:
+                print("⚠️ Saved feature order differs from code. Using saved order exclusively at inference.")
             
             # Print model info if available
             training_history = model_data.get('training_history', {})
@@ -126,25 +144,44 @@ class GazePredictor:
                 
             norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll = features[:7]
             
-            # Apply the same feature engineering as in training
-            avg_norm_x = (norm_x_L + norm_x_R) / 2
-            avg_norm_y = (norm_y_L + norm_y_R) / 2
-            x_yaw_interaction = avg_norm_x * yaw
-            y_pitch_interaction = avg_norm_y * pitch
+            # Build engineered DataFrame using shared function
+            eng_df, _ = assemble_features_from_row(norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll)
             
-            # Create engineered feature vector matching training format
-            engineered_features = [avg_norm_x, avg_norm_y, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction]
+            # Use model's saved order exclusively
+            cols = self.saved_feature_columns
             
-            # Apply scaler if available (CRITICAL FIX!)
-            if self.scaler is not None:
-                engineered_features_scaled = self.scaler.transform([engineered_features])[0]
+            # Minimal diagnostics under DEBUG_FEATURES=1
+            if os.environ.get('DEBUG_FEATURES', '0') == '1':
+                print(f"Engineered columns: {list(eng_df.columns)}")
+                print(f"Using saved order: {cols}")
+                if hasattr(self.scaler, 'n_features_in_'):
+                    print(f"Scaler expects: {self.scaler.n_features_in_} features")
+            
+            # Strict alignment - enforce DataFrame reindex before scaling
+            try:
+                X1 = eng_df.reindex(columns=cols)
+            except Exception as e:
+                print(f"Feature alignment error: {e}")
+                return None
+                
+            if X1.isna().any().any():
+                missing = [c for c in cols if c not in eng_df.columns]
+                print(f"❌ Missing engineered columns: {missing}")
+                return None
+            
+            # Scale and predict with strict dimension checks
+            if self.scaler is None:
+                print("⚠️ No scaler in model; using unscaled features")
+                X1_scaled = X1.values
             else:
-                print("⚠️ No scaler available - using unscaled features")
-                engineered_features_scaled = engineered_features
+                if hasattr(self.scaler, 'n_features_in_') and self.scaler.n_features_in_ != len(cols):
+                    print(f"❌ Scaler expects {self.scaler.n_features_in_} features; saved schema has {len(cols)}")
+                    return None
+                X1_scaled = self.scaler.transform(X1.values)
             
-            # Make prediction with properly scaled features
-            prediction = self.model.predict([engineered_features_scaled])[0]
-            return int(prediction[0]), int(prediction[1])
+            pred = self.model.predict(X1_scaled)
+            return int(pred[0][0]), int(pred[0][1])
+            
         except Exception as e:
             print(f"Error during prediction: {str(e)}")
             return None
@@ -171,14 +208,14 @@ class GazePredictor:
                 
                 if current_movement_type == "Fixation":
                     # During fixations, trust Kalman more for stability
-                    blend_factor = 0.4  # 40% Kalman, 60% raw
+                    blend_factor = 0.1  # 70% Kalman, 30% raw
                 elif current_movement_type == "Saccade":
                     # During saccades, trust raw prediction more for responsiveness
-                    blend_factor = 0.2  # 20% Kalman, 80% raw
+                    blend_factor = 0.1  # 10% Kalman, 90% raw
                 else:  # Smooth pursuit
                     # Balanced blending for smooth movements
-                    blend_factor = 0.3  # 30% Kalman, 70% raw
-                
+                    blend_factor = 0.1  # 15% Kalman, 85% raw
+
                 # Enhanced blending with bounds checking
                 enhanced_x = int(raw_x * (1 - blend_factor) + kalman_x * blend_factor)
                 enhanced_y = int(raw_y * (1 - blend_factor) + kalman_y * blend_factor)

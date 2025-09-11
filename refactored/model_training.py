@@ -12,6 +12,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor
 import datetime
 import os
+from utils.features import feature_engineer_df, FEATURE_COLUMNS
 
 def euclidean_distance_scorer(y_true, y_pred):
     """
@@ -33,32 +34,8 @@ def euclidean_distance_scorer(y_true, y_pred):
     # Return negative mean distance (GridSearchCV maximizes, we want to minimize distance)
     return -np.mean(euclidean_distances)
 
-def feature_engineer(df):
-    """
-    Apply feature engineering to the preprocessed calibration data.
-    
-    Args:
-        df: DataFrame with preprocessed calibration data
-        
-    Returns:
-        DataFrame with engineered features
-    """
-    print("Performing feature engineering...")
-    
-    # Create average normalized eye coordinates
-    df['avg_norm_x'] = (df['norm_x_L'] + df['norm_x_R']) / 2
-    df['avg_norm_y'] = (df['norm_y_L'] + df['norm_y_R']) / 2
-    
-    # Create interaction features
-    df['x_yaw_interaction'] = df['avg_norm_x'] * df['yaw']
-    df['y_pitch_interaction'] = df['avg_norm_y'] * df['pitch']
-    
-    print("Feature engineering complete. Features: ['avg_norm_x', 'avg_norm_y', 'yaw', 'pitch', 'roll', 'x_yaw_interaction', 'y_pitch_interaction']")
-    
-    return df
-
 class GazeModelTrainer:
-    """Streamlined trainer for multi-output XGBoost gaze tracking model."""
+    """Streamlined trainer for multi-output Random Forest Regressor gaze tracking model."""
     
     def __init__(self):
         """Initialize the trainer."""
@@ -102,8 +79,8 @@ class GazeModelTrainer:
     
     def train_model(self, df, noise_level=5.0):
         """
-        Train multi-output XGBoost model with Euclidean distance optimization.
-        
+        Train multi-output Random Forest Regressor model with Euclidean distance optimization.
+
         Args:
             df: Preprocessed DataFrame with calibration data
             noise_level: Standard deviation of Gaussian noise for data augmentation
@@ -111,17 +88,21 @@ class GazeModelTrainer:
         Returns:
             Trained model or None if training fails
         """
-        print("--- Training Multi-Output XGBoost Model with Euclidean Distance Optimization ---")
-        
-        # Prepare features and targets
-        feature_columns = ['avg_norm_x', 'avg_norm_y', 'yaw', 'pitch', 'roll', 'x_yaw_interaction', 'y_pitch_interaction']
+        print("--- Training Multi-Output Random Forest Regressor Model with Euclidean Distance Optimization ---")
+
+        # Apply feature engineering
+        df_eng = feature_engineer_df(df)
+
+        # Prepare features and targets (USE SHARED ORDER)
+        feature_columns = FEATURE_COLUMNS
         target_columns = ['target_x', 'target_y']
         
-        X = df[feature_columns].values
-        y = df[target_columns].values
+        X = df_eng[feature_columns].values
+        y = df_eng[target_columns].values
         
         print(f"Feature matrix shape: {X.shape}")
         print(f"Target matrix shape: {y.shape}")
+        print(f"Features: {feature_columns}")
         
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
@@ -144,11 +125,17 @@ class GazeModelTrainer:
         X_train_scaled = self.scaler.fit_transform(X_train)
         X_test_scaled = self.scaler.transform(X_test)
         
+        # Guard against future schema drift
+        if hasattr(self.scaler, 'n_features_in_'):
+            if self.scaler.n_features_in_ != len(FEATURE_COLUMNS):
+                print(f"❌ Scaler expects {self.scaler.n_features_in_} features but FEATURE_COLUMNS has {len(FEATURE_COLUMNS)}")
+                return None
+        
         # Define parameter grid for RandomForestRegressor GridSearchCV
         param_grid = {
             'n_estimators': [300, 350, 400],
             'max_depth': [8, 10, 12],
-            'min_samples_split': [1, 2, 3],
+            'min_samples_split': [2, 3, 4],  # Fixed: must be >= 2
             'min_samples_leaf': [1, 2, 3],
         }
         
@@ -282,7 +269,7 @@ class GazeModelTrainer:
             'model': self.model,
             'scaler': self.scaler,
             'training_history': self.training_history,
-            'feature_columns': ['avg_norm_x', 'avg_norm_y', 'yaw', 'pitch', 'roll', 'x_yaw_interaction', 'y_pitch_interaction'],
+            'feature_columns': FEATURE_COLUMNS, # exact order
             'target_columns': ['target_x', 'target_y'],
             'model_type': 'randomforest_multi_output'
         }
@@ -305,8 +292,8 @@ class GazeModelTrainer:
         Returns:
             str: Path to saved model file if save_model=True, else None
         """
-        print("=== Streamlined Multi-Output XGBoost Gaze Model Training ===")
-        
+        print("=== Streamlined Multi-Output Random Forest Regressor Gaze Model Training ===")
+
         # Load data
         df = self.load_calibration_data(csv_file)
         if df is None:
@@ -320,7 +307,7 @@ class GazeModelTrainer:
         
         # Apply feature engineering
         print("Applying feature engineering...")
-        engineered_df = feature_engineer(df)
+        engineered_df = feature_engineer_df(df)
         print(f"Engineered data shape: {engineered_df.shape}")
         
         # Train model
@@ -333,8 +320,8 @@ class GazeModelTrainer:
         model_path = None
         if save_model:
             model_path = self.save_model()
-        
-        print("=== XGBoost Training Complete ===")
+
+        print("=== Random Forest Regressor Training Complete ===")
         return model_path
 
 def main():
