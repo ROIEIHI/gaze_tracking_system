@@ -57,12 +57,6 @@ refactored/enhanced_training.py
 refactored/fair_comparison.py
 refactored/gaze_tracking_refactored.py
 
-# Setup and validation scripts (for local use only)
-refactored/setup_environment.py
-refactored/validate_setup.py
-refactored/requirements.txt
-README_SETUP.md
-
 # Temporary files
 *.tmp
 *.log
