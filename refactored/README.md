@@ -1,15 +1,15 @@
 # Streamlined Gaze Tracking System
 
-## Multi-Output XGBoost Implementation with Euclidean Distance Optimization
+## Multi-Output RandomForest Implementation with Euclidean Distance Optimization
 
 A highly efficient gaze tracking system using advanced machine learning techniques for accurate real-time gaze prediction.
 
 ## Features
 
-- **Multi-Output XGBoost Model**: Single model predicting both X and Y coordinates simultaneously
+- **Multi-Output RandomForest Model**: Single model predicting both X and Y coordinates simultaneously
 - **Euclidean Distance Optimization**: Custom scorer for minimizing spatial prediction error
-- **Advanced Feature Engineering**: 7 engineered features including interaction terms
-- **Data Augmentation**: Gaussian noise injection for improved generalization
+- **Advanced Feature Engineering**: 9 engineered features including raw eye positions and interaction terms
+- **Pitch Baseline Calibration**: Calibration-time pitch baseline adjustment for improved accuracy
 - **Real-Time Prediction**: Optimized for low-latency live gaze tracking
 - **21-Point Calibration**: Comprehensive calibration system using MediaPipe
 - **Streamlined Workflow**: Complete pipeline from calibration to prediction
@@ -30,7 +30,7 @@ This script will:
 
 ### 2. Manual Installation (Alternative)
 ```bash
-pip install xgboost scikit-learn pandas numpy opencv-python mediapipe joblib
+pip install scikit-learn pandas numpy opencv-python mediapipe joblib
 ```
 
 ### 3. Run the System
@@ -39,8 +39,8 @@ python main.py
 ```
 
 ### 4. Choose Your Workflow
-- **Run Calibration**: Collect training data (21-point calibration)
-- **Train Model**: Build optimized XGBoost model
+- **Run Calibration**: Collect training data (21-point calibration with pitch baseline)
+- **Train Model**: Build optimized RandomForest model
 - **Real-Time Prediction**: Use trained model for live gaze tracking
 - **Complete Workflow**: Run all steps in sequence
 
@@ -59,8 +59,8 @@ For new installations, the following helper scripts are available in the reposit
 ```
 refactored/
 ├── main.py                    # Main GUI application
-├── calibration.py             # 21-point calibration system
-├── model_training.py          # Multi-output XGBoost training
+├── calibration.py             # 21-point calibration system with pitch baseline
+├── model_training.py          # Multi-output RandomForest training
 ├── prediction.py              # Real-time gaze prediction
 ├── eye_movement_analyzer.py   # Movement analysis utilities
 ├── preview_text.py            # Text preview functionality
@@ -74,20 +74,22 @@ refactored/
 ### 1. Calibration System (`calibration.py`)
 - MediaPipe-based facial landmark detection
 - 21-point screen calibration pattern
-- Head pose estimation (yaw, pitch, roll)
+- **Pitch Baseline Measurement**: Mouse-click triggered baseline collection (60 frames)
+- Head pose estimation (yaw, pitch, roll) with pitch adjustment
 - Iris position normalization
+- Simplified 9-column feature output
 - Outlier detection and data cleaning
 
 ### 2. Model Training (`model_training.py`)
-- **Multi-Output XGBoost**: Single model for X/Y prediction
+- **Multi-Output RandomForest**: Single model for X/Y prediction
 - **Custom Euclidean Scorer**: Minimizes spatial distance error
-- **Feature Engineering**: Average eye positions + interaction terms
+- **Feature Engineering**: 9 features including raw eye positions and interaction terms
 - **GridSearchCV Optimization**: Hyperparameter tuning
-- **Data Augmentation**: 5-pixel Gaussian noise injection
-- **Cross-Validation**: 5-fold validation with custom scorer
+- **Cross-Validation**: 3-fold validation with custom scorer
 
 ### 3. Real-Time Prediction (`prediction.py`)
 - **Streamlined Pipeline**: Feature extraction → prediction → smoothing
+- **Pitch Baseline Loading**: Uses calibration-time baseline for consistency
 - **Exponential Smoothing**: Reduces prediction jitter
 - **Eye Movement Analysis**: Optional movement tracking
 - **Performance Optimized**: Minimal latency for real-time use
@@ -95,10 +97,10 @@ refactored/
 ## 📊 Model Performance
 
 ### Training Configuration
-- **Features**: 7 engineered features (avg_norm_x, avg_norm_y, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction)
+- **Features**: 9 engineered features (norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction)
 - **Optimization**: Custom Euclidean distance scorer
-- **Data Augmentation**: 5-pixel noise level
-- **Cross-Validation**: 5-fold with custom scorer
+- **Pitch Adjustment**: Calibration-time baseline measurement and adjustment
+- **Cross-Validation**: 3-fold with custom scorer
 
 ### Performance Metrics
 - **Euclidean Distance Error**: ~110 pixels (typical)
@@ -119,7 +121,7 @@ csv_file = calibrator.run_calibration()
 # Training
 from model_training import GazeModelTrainer
 trainer = GazeModelTrainer()
-model_path = trainer.train_from_csv(csv_file, noise_level=5.0)
+model_path = trainer.train_from_csv(csv_file)
 
 # Prediction
 from prediction import GazePredictor
@@ -128,21 +130,23 @@ predictor.run_real_time_prediction(enable_smoothing=True)
 ```
 
 ### Feature Engineering
-The system automatically engineers features from raw MediaPipe outputs:
+The system uses 9 engineered features from raw MediaPipe outputs:
 
 ```python
-# Raw features: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll]
+# Raw features: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch_raw, roll]
 # Engineered features:
-avg_norm_x = (norm_x_L + norm_x_R) / 2
-avg_norm_y = (norm_y_L + norm_y_R) / 2
+pitch = pitch_raw - pitch_baseline  # Baseline-adjusted pitch
+avg_norm_x = (norm_x_L + norm_x_R) / 2  # For interaction terms only
+avg_norm_y = (norm_y_L + norm_y_R) / 2  # For interaction terms only
 x_yaw_interaction = avg_norm_x * yaw
 y_pitch_interaction = avg_norm_y * pitch
-# Final: [avg_norm_x, avg_norm_y, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction]
+
+# Final 9 features: [norm_x_L, norm_y_L, norm_x_R, norm_y_R, yaw, pitch, roll, x_yaw_interaction, y_pitch_interaction]
 ```
 
 ## 🔍 Technical Details
 
-### Multi-Output XGBoost Architecture
+### Multi-Output RandomForest Architecture
 - **Single Model**: Predicts both coordinates simultaneously
 - **Shared Learning**: Common feature representations for X/Y
 - **Euclidean Optimization**: Direct minimization of spatial error
@@ -173,11 +177,10 @@ def euclidean_distance_scorer(y_true, y_pred):
 ```python
 # In model_training.py
 param_grid = {
-    'n_estimators': [100, 200, 300],
-    'max_depth': [4, 6, 8],
-    'learning_rate': [0.05, 0.1, 0.15],
-    'subsample': [0.8, 0.9, 1.0],
-    'colsample_bytree': [0.8, 0.9, 1.0]
+    'n_estimators': [300, 350, 400],
+    'max_depth': [8, 10, 12],
+    'min_samples_split': [2, 3, 4],
+    'min_samples_leaf': [1, 2, 3]
 }
 ```
 
@@ -192,22 +195,23 @@ predictor.run_real_time_prediction(
 
 ## 🔬 Research Notes
 
-### Why Multi-Output XGBoost?
+### Why Multi-Output RandomForest?
 1. **Joint Optimization**: X and Y coordinates learned together
 2. **Shared Features**: Common representations reduce overfitting
 3. **Euclidean Optimization**: Direct minimization of spatial error
 4. **Efficiency**: Single model reduces computational overhead
+5. **Robustness**: Ensemble method provides stable predictions
 
 ### Feature Engineering Rationale
-1. **Average Eye Positions**: Reduces noise from individual eye variations
-2. **Head Pose Integration**: Captures gaze direction changes
+1. **Individual Eye Positions**: Raw left/right eye coordinates capture fine-grained eye movements
+2. **Head Pose Integration**: Captures gaze direction changes with pitch baseline adjustment
 3. **Interaction Terms**: Captures complex relationships between eye position and head orientation
 
 ## 📈 Performance Optimization
 
 ### Training Optimizations
 - GridSearchCV with custom scorer
-- Data augmentation for robustness
+- Pitch baseline calibration for improved accuracy
 - Feature scaling for numerical stability
 - Cross-validation for reliable evaluation
 
@@ -237,8 +241,8 @@ This project is for educational and research purposes.
 
 ## 🤝 Contributing
 
-This is a streamlined implementation focused on multi-output XGBoost optimization. The codebase has been simplified for efficiency and maintainability.
+This is a streamlined implementation focused on multi-output RandomForest optimization. The codebase has been simplified for efficiency and maintainability.
 
 ---
 
-**Built with**: XGBoost, scikit-learn, MediaPipe, OpenCV, NumPy, pandas
+**Built with**: RandomForest (scikit-learn), MediaPipe, OpenCV, NumPy, pandas
