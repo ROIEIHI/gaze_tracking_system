@@ -47,6 +47,7 @@ fail/
 
 # Data files that shouldn't be in version control
 movement_data/
+user_sessions/
 analyze_calibration.py
 comprehensive_debug.py
 diagnose_prediction.py
