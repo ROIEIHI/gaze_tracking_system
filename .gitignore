@@ -1,4 +1,13 @@
-# Python
+# ================================================================
+# GAZE TRACKING SYSTEM - FOCUSED ON SYSTEM DIRECTORY
+# ================================================================
+
+# Include only system directory and essential files
+# Everything else is ignored by default
+
+# ================================================================
+# PYTHON CACHE AND BUILD FILES
+# ================================================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -38,20 +47,54 @@ Thumbs.db
 # Project specific
 calibration_data_*.csv
 calibration_data/*.csv
-gaze_model_*.joblib
+# ================================================================
+# EXCLUDE EVERYTHING EXCEPT SYSTEM DIRECTORY
+# ================================================================
+
+# Exclude all directories except system/
+/refactored/
+/calibration_data/
+/eye_tracking_data/
+/movement_data/
+/output/
+
+# Exclude data and model files (regenerated during use)
 *.pkl
 *.joblib
+*.csv
+models/
+calibration_data/
+eye_tracking_data/
+movement_data/
+output/
+
+# Exclude test/debug files
 test_*.py
 debug_*.py
+*_test.py
+*_debug.py
+analyze_*.py
+diagnose_*.py
+comprehensive_*.py
+mouse_gaze_test*.py
+mouse_gaze_test*.csv
+
+# Exclude experimental files
 fail/
+temp/
+backup/
+old/
 
-# Data files that shouldn't be in version control
-movement_data/
-analyze_calibration.py
-comprehensive_debug.py
-diagnose_prediction.py
+# ================================================================
+# FOCUS ON SYSTEM DIRECTORY ONLY
+# ================================================================
+# The system/ directory and its contents are the main focus
+# All other directories are excluded to keep the repo clean
 
-# Experimental/development files not for production
+# Include essential configuration files
+!.gitignore
+!README.md
+!requirements.txt
 refactored/comprehensive_comparison.py
 refactored/enhanced_training.py
 refactored/fair_comparison.py

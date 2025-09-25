@@ -1,20 +1,80 @@
-# Streamlined Gaze Tracking System
+# 🎯 Gaze Tracking Reading Analysis System
 
-## Multi-Output RandomForest Implementation with Euclidean Distance Optimization
+A **professional-grade eye tracking system** designed for reading behavior analysis and research. This system provides comprehensive gaze tracking capabilities with real-time analysis, adaptive text rendering, and detailed movement metrics suitable for academic research and commercial applications.
 
-A highly efficient gaze tracking system using advanced machine learning techniques for accurate real-time gaze prediction.
+## ✨ Key Features
 
-## Features
+### 🎯 **Advanced Calibration System**
+- **21-point strategic calibration** targeting corners, edges, and center regions
+- **Additional grid calibration** with customizable density (6x6 default)
+- **Adaptive margins** and intelligent duplicate detection
+- **Real-time face detection** with MediaPipe integration
+- **Pitch baseline calibration** for improved accuracy
 
-- **Multi-Output RandomForest Model**: Single model predicting both X and Y coordinates simultaneously
-- **Euclidean Distance Optimization**: Custom scorer for minimizing spatial prediction error
-- **Advanced Feature Engineering**: 9 engineered features including raw eye positions and interaction terms
-- **Pitch Baseline Calibration**: Calibration-time pitch baseline adjustment for improved accuracy
-- **Real-Time Prediction**: Optimized for low-latency live gaze tracking
-- **21-Point Calibration**: Comprehensive calibration system using MediaPipe
-- **Streamlined Workflow**: Complete pipeline from calibration to prediction
+### 📖 **Text Reading Analysis**
+- **Adaptive text rendering** that scales to any screen size
+- **Word-level fixation tracking** with precise positioning
+- **Reading pattern detection** (fixations, saccades, regressions, return sweeps)
+- **Multi-page text support** with navigation controls
+- **Responsive UI** with configurable margins and font scaling
 
-## Quick Start
+### 🧠 **Eye Movement Analysis**
+- **Kalman filtering** for smooth gaze tracking
+- **Movement classification** (fixations, saccades, smooth pursuit)
+- **Reading-specific metrics** (WPM, regression rate, line changes)
+- **Real-time velocity and direction analysis**
+- **EyeMovementAnalyzer** with text reading mode
+
+### 📊 **Data Export & Analysis**
+- **CSV export** matching standard research formats
+- **Comprehensive fixation data** with timestamps and durations
+- **Word-level analysis** with proximity detection
+- **Session-based tracking** with detailed metrics
+- **Compatible with eye tracking research standards**
+
+## 🚀 Quick Start
+
+### 1. Prerequisites
+```bash
+# Required Python packages
+pip install opencv-python mediapipe pandas numpy scikit-learn joblib
+```
+
+### 2. System Setup
+```bash
+# Run the main system
+python main.py
+
+# Follow the interactive menu:
+# 1. Calibration (required first time)
+# 2. Model Training (after calibration)
+# 3. Reading Analysis (after training)
+```
+
+### 3. Calibration Process
+- **Position yourself** 60-80cm from the screen
+- **Follow the red circles** that appear on screen
+- **Keep your head stable** during each calibration point
+- **21 strategic points + grid points** for comprehensive coverage
+
+### 4. Reading Analysis
+- **ESC**: Exit and export data
+- **A/D**: Navigate between text pages
+- **E**: Export current session data
+- **Fullscreen mode** with real-time gaze overlay
+
+## 📁 System Architecture
+
+```
+system/
+├── main.py                    # Main entry point and system coordinator
+├── calibration.py            # Advanced calibration with 21+ points
+├── model_training.py         # Multi-output RandomForest training
+├── prediction.py             # Text reading analysis system
+├── eye_movement_analyzer.py  # Movement analysis and metrics
+├── config.py                 # System configuration and constants
+└── README.md                 # This documentation
+```
 
 ### 1. First-Time Setup (New Computer)
 ```bash
