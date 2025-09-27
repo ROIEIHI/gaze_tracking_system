@@ -16,8 +16,9 @@ from config import *
 class GazeCalibrator:
     """Main calibration class handling all calibration processes"""
     
-    def __init__(self):
+    def __init__(self, output_dir=None):
         """Initialize the calibrator with MediaPipe and OpenCV setup"""
+        self.output_dir = output_dir or CALIBRATION_DATA_DIR
         # MediaPipe setup
         self.mp_face_mesh = mp.solutions.face_mesh
         self.mp_drawing = mp.solutions.drawing_utils
@@ -103,29 +104,12 @@ class GazeCalibrator:
         strategic_points = corners + edges + inner_grid + intermediates
         
         # ========================================================================
-        # ADDITIONAL GRID POINTS
+        # RETURN ONLY STRATEGIC POINTS (21 points)
         # ========================================================================
         
-        additional_points = []
-        for row in range(CALIBRATION_GRID_SIZE):
-            for col in range(CALIBRATION_GRID_SIZE):
-                # Calculate grid position
-                if CALIBRATION_GRID_SIZE > 1:
-                    x = CALIBRATION_MARGIN_X + col * (w - 2 * CALIBRATION_MARGIN_X) // (CALIBRATION_GRID_SIZE - 1)
-                    y = CALIBRATION_MARGIN_Y + row * (h - 2 * CALIBRATION_MARGIN_Y) // (CALIBRATION_GRID_SIZE - 1)
-                    additional_points.append((x, y))
-                else:
-                    x, y = w // 2, h // 2
-
+        points = strategic_points
         
-        # ========================================================================
-        # COMBINE AND RETURN
-        # ========================================================================
-        
-        points = strategic_points + additional_points
-        
-        print(f"Generated {len(points)} calibration points:")
-        print(f"  Strategic: {len(strategic_points)}, Additional: {len(additional_points)}")
+        print(f"Generated {len(points)} calibration points (strategic points only)")
         
         return points
     
@@ -647,7 +631,7 @@ class GazeCalibrator:
         # Generate filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"calibration_data_{timestamp}.csv"
-        filepath = os.path.join(CALIBRATION_DATA_DIR, filename)
+        filepath = os.path.join(self.output_dir, filename)
         
         # Save to CSV
         df.to_csv(filepath, index=False)
@@ -695,6 +679,9 @@ class GazeCalibrator:
         cv2.putText(completion_frame, "Press any key to continue", 
                    (SCREEN_WIDTH//2 - 150, SCREEN_HEIGHT//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2)
         
+        # Display completion message in full screen
+        cv2.namedWindow('Calibration Complete', cv2.WND_PROP_FULLSCREEN)
+        cv2.setWindowProperty('Calibration Complete', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         cv2.imshow('Calibration Complete', completion_frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()

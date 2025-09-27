@@ -1,0 +1,1 @@
+user_name: Emily\nsession_start: 2025-09-27 13:18:23\nuser_directory: c:\Users\emilo\OneDrive - Holon Institute of Technology\מעבדה לעיבוד תמונה\gaze_tracking_system-1\user_data\Emily\n

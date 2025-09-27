@@ -19,9 +19,12 @@ import pandas as pd
 class TextReadingGazePredictor:
     """Enhanced gaze predictor with text reading analysis capabilities"""
     
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, output_dir: str = None):
         """Initialize the enhanced gaze predictor"""
         print("Initializing Text Reading Gaze Predictor...")
+        
+        # Set output directory
+        self.output_dir = output_dir or OUTPUT_DIR
         
         # MediaPipe setup
         self.mp_face_mesh = mp.solutions.face_mesh
@@ -48,6 +51,12 @@ class TextReadingGazePredictor:
         
         # Text reading system
         self.current_page = 0
+        
+        # Blink detection
+        self.blink_count = 0
+        self.last_blink_time = 0
+        self.eye_closed_frames = 0
+        self.blink_threshold = 3  # frames needed to register a blink
         self.total_pages = 0
         self.text_pages = []
         self.word_positions = []
@@ -331,6 +340,9 @@ class TextReadingGazePredictor:
         
         face_landmarks = results.multi_face_landmarks[0]
         
+        # Detect blinks
+        self._detect_blink(face_landmarks)
+        
         # Extract features (simplified - adapt to your feature extraction logic)
         features = self._extract_features(face_landmarks, frame.shape)
         
@@ -535,11 +547,64 @@ class TextReadingGazePredictor:
         
         return nearest_word
     
+    def _detect_blink(self, face_landmarks):
+        """Detect blinks using eye aspect ratio"""
+        # Eye landmarks (MediaPipe indices)
+        left_eye = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+        right_eye = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+        
+        def eye_aspect_ratio(eye_landmarks):
+            # Compute distances between vertical eye landmarks
+            A = np.linalg.norm(eye_landmarks[1] - eye_landmarks[5])
+            B = np.linalg.norm(eye_landmarks[2] - eye_landmarks[4])
+            # Compute distance between horizontal eye landmarks
+            C = np.linalg.norm(eye_landmarks[0] - eye_landmarks[3])
+            # Compute eye aspect ratio
+            ear = (A + B) / (2.0 * C)
+            return ear
+        
+        # Extract eye coordinates
+        h, w = 480, 640  # Camera resolution
+        left_coords = np.array([(face_landmarks.landmark[i].x * w, face_landmarks.landmark[i].y * h) for i in left_eye[:6]])
+        right_coords = np.array([(face_landmarks.landmark[i].x * w, face_landmarks.landmark[i].y * h) for i in right_eye[:6]])
+        
+        # Calculate eye aspect ratios
+        left_ear = eye_aspect_ratio(left_coords)
+        right_ear = eye_aspect_ratio(right_coords)
+        
+        # Average the eye aspect ratios
+        avg_ear = (left_ear + right_ear) / 2.0
+        
+        # Blink detection threshold (typical value is around 0.25)
+        EAR_THRESHOLD = 0.25
+        
+        if avg_ear < EAR_THRESHOLD:
+            self.eye_closed_frames += 1
+        else:
+            if self.eye_closed_frames >= self.blink_threshold:
+                self.blink_count += 1
+                self.last_blink_time = time.time()
+            self.eye_closed_frames = 0
+        
+        return avg_ear < EAR_THRESHOLD
+    
+    def _calculate_blink_frequency(self, duration_seconds):
+        """Calculate blinks per minute"""
+        if duration_seconds > 0:
+            return (self.blink_count / duration_seconds) * 60
+        return 0.0
+    
     def _export_fixation_data(self) -> str:
         """Export fixation data in the same format as your CSV example"""
         if not self.fixation_data:
             print("No fixation data to export")
             return None
+        
+        # Calculate session duration for blink frequency
+        session_start = self.fixation_data[0]['timestamp'] if self.fixation_data else 0
+        session_end = self.fixation_data[-1]['timestamp'] if self.fixation_data else 0
+        session_duration = session_end - session_start
+        blink_frequency = self._calculate_blink_frequency(session_duration)
         
         # Process fixation data to match your CSV format
         processed_fixations = []
@@ -582,7 +647,7 @@ class TextReadingGazePredictor:
                             'Fixation_Duration': round(duration, 2),
                             'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
                             'Pupil_Size': 3.87,  # Placeholder - implement pupil size detection
-                            'Blink_Frequency': 0.0  # Placeholder - implement blink detection
+                            'Blink_Frequency': round(blink_frequency, 2)
                         })
                         fixation_order += 1
                     
@@ -611,15 +676,19 @@ class TextReadingGazePredictor:
                     'Fixation_Duration': round(duration, 2),
                     'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
                     'Pupil_Size': 3.87,
-                    'Blink_Frequency': 0.0
+                    'Blink_Frequency': round(blink_frequency, 2)
                 })
         
         # Create DataFrame and export
         if processed_fixations:
             df = pd.DataFrame(processed_fixations)
+            
+            # Filter out "Unknown" words - only keep detected words
+            df = df[df['Fixated_Word'] != 'Unknown']
+            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"eye_movement_data_{timestamp}.csv"
-            filepath = os.path.join(OUTPUT_DIR, filename)
+            filepath = os.path.join(self.output_dir, filename)
             
             df.to_csv(filepath, index=False)
             print(f"✅ Exported {len(processed_fixations)} fixations to: {filepath}")
