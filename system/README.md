@@ -1,8 +1,15 @@
-# 🎯 Gaze Tracking Reading Analysis System
+# 🎯 Hebrew RTL-Aware Gaze Tracking Reading Analysis System
 
-A **professional-grade eye tracking system** designed for reading behavior analysis and research. This system provides comprehensive gaze tracking capabilities with real-time analysis, adaptive text rendering, and detailed movement metrics suitable for academic research and commercial applications.
+A **professional-grade multilingual eye tracking system** with advanced support for Hebrew right-to-left (RTL) text reading analysis. This system provides comprehensive gaze tracking capabilities with RTL-aware prediction algorithms, adaptive Hebrew text rendering, and detailed movement metrics optimized for both Hebrew and English reading research.
 
 ## ✨ Key Features
+
+### 🔄 **RTL-Aware Eye Tracking (NEW)**
+- **Hebrew text detection** with automatic RTL mode activation
+- **RTL-optimized Kalman filter** with leftward reading bias (-1.2 vs +1.0 for LTR)
+- **Hebrew-specific eye movement parameters** (higher process noise, negative saccade direction)
+- **Automatic language detection** based on Hebrew keyword analysis
+- **Seamless bilingual support** for Hebrew and English text analysis
 
 ### 🎯 **Advanced Calibration System**
 - **21-point strategic calibration** targeting corners, edges, and center regions
@@ -11,19 +18,20 @@ A **professional-grade eye tracking system** designed for reading behavior analy
 - **Real-time face detection** with MediaPipe integration
 - **Pitch baseline calibration** for improved accuracy
 
-### 📖 **Text Reading Analysis**
-- **Adaptive text rendering** that scales to any screen size
-- **Word-level fixation tracking** with precise positioning
-- **Reading pattern detection** (fixations, saccades, regressions, return sweeps)
-- **Multi-page text support** with navigation controls
-- **Responsive UI** with configurable margins and font scaling
+### 📖 **Multilingual Text Reading Analysis**
+- **Hebrew RTL text rendering** with PIL and bidi library support
+- **Adaptive text rendering** that scales to any screen size for both Hebrew and English
+- **RTL word-level fixation tracking** with Hebrew-aligned positioning
+- **Reading pattern detection** optimized for RTL patterns (fixations, saccades, regressions)
+- **Multi-page text support** with RTL navigation controls
+- **Hebrew font integration** with automatic system font detection
 
-### 🧠 **Eye Movement Analysis**
-- **Kalman filtering** for smooth gaze tracking
-- **Movement classification** (fixations, saccades, smooth pursuit)
-- **Reading-specific metrics** (WPM, regression rate, line changes)
-- **Real-time velocity and direction analysis**
-- **EyeMovementAnalyzer** with text reading mode
+### 🧠 **RTL-Aware Eye Movement Analysis**
+- **Dual-mode Kalman filtering** (LTR/RTL) for language-optimized gaze tracking
+- **RTL movement classification** (Hebrew-specific fixations, leftward saccades, line returns)
+- **Hebrew reading-specific metrics** (RTL WPM, Hebrew regression patterns, RTL line changes)
+- **Real-time RTL velocity and direction analysis**
+- **EyeMovementAnalyzer** with Hebrew reading mode and RTL parameters
 
 ### 📊 **Data Export & Analysis**
 - **CSV export** matching standard research formats
@@ -36,8 +44,9 @@ A **professional-grade eye tracking system** designed for reading behavior analy
 
 ### 1. Prerequisites
 ```bash
-# Required Python packages
+# Required Python packages for Hebrew RTL support
 pip install opencv-python mediapipe pandas numpy scikit-learn joblib
+pip install pillow python-bidi arabic-reshaper  # For Hebrew text rendering
 ```
 
 ### 2. System Setup
@@ -48,6 +57,7 @@ python main.py
 # Follow the interactive menu:
 # 1. Calibration (required first time)
 # 2. Model Training (after calibration)
+# 3. Hebrew RTL Reading Analysis (NEW)
 # 3. Reading Analysis (after training)
 ```
 
@@ -57,24 +67,32 @@ python main.py
 - **Keep your head stable** during each calibration point
 - **21 strategic points + grid points** for comprehensive coverage
 
-### 4. Reading Analysis
-- **ESC**: Exit and export data
-- **A/D**: Navigate between text pages
-- **E**: Export current session data
-- **Fullscreen mode** with real-time gaze overlay
+### 4. Hebrew RTL Reading Analysis
+- **Automatic Hebrew detection** and RTL mode activation
+- **ESC**: Exit and export Hebrew reading data
+- **A/D**: Navigate between Hebrew text pages (RTL-aware)
+- **E**: Export current Hebrew reading session data
+- **Fullscreen Hebrew text** with RTL-optimized gaze overlay
+- **Hebrew font rendering** with proper character support
 
 ## 📁 System Architecture
 
 ```
 system/
-├── main.py                    # Main entry point and system coordinator
+├── main.py                    # Main entry point with Hebrew RTL support
 ├── calibration.py            # Advanced calibration with 21+ points
 ├── model_training.py         # Multi-output RandomForest training
-├── prediction.py             # Text reading analysis system
-├── eye_movement_analyzer.py  # Movement analysis and metrics
-├── config.py                 # System configuration and constants
+├── prediction.py             # Hebrew RTL text reading analysis system
+├── eye_movement_analyzer.py  # RTL-aware movement analysis and Kalman filtering
+├── config.py                 # System configuration with Hebrew RTL settings
 └── README.md                 # This documentation
 ```
+
+### RTL-Aware Components (NEW)
+- **Hebrew Text Detection**: Automatic language identification using Hebrew keywords
+- **RTL Kalman Filter**: Specialized parameters for Hebrew reading patterns
+- **Hebrew Font Rendering**: PIL-based rendering with bidi/arabic-reshaper support
+- **RTL Word Positioning**: Hebrew text layout with proper right-to-left alignment
 
 ### 1. First-Time Setup (New Computer)
 ```bash
@@ -91,7 +109,44 @@ This script will:
 ### 2. Manual Installation (Alternative)
 ```bash
 pip install scikit-learn pandas numpy opencv-python mediapipe joblib
+pip install pillow python-bidi arabic-reshaper  # For Hebrew RTL support
 ```
+
+## 🇮🇱 Hebrew RTL Features (NEW)
+
+### Hebrew Text Detection
+The system automatically detects Hebrew text and switches to RTL mode:
+```python
+# Automatic Hebrew detection based on keywords
+hebrew_keywords = ["של", "את", "על", "אל", "עם", "בין", "אם", "מה", "זה", "הוא"]
+rtl_threshold = 2  # Minimum Hebrew words to activate RTL mode
+```
+
+### RTL-Aware Kalman Filter
+Specialized parameters for Hebrew reading patterns:
+```python
+# LTR Mode (English)
+reading_direction_bias = 1.0    # Rightward movement bias
+process_noise = 0.1             # Standard process noise
+saccade_direction = 1           # Positive (rightward)
+
+# RTL Mode (Hebrew) 
+reading_direction_bias = -1.2   # Leftward movement bias
+process_noise = 0.15            # Higher noise for RTL variability  
+saccade_direction = -1          # Negative (leftward)
+```
+
+### Hebrew Text Rendering
+- **PIL Integration**: Proper Hebrew font rendering with system font detection
+- **Bidi Processing**: Right-to-left text layout with python-bidi library
+- **Character Shaping**: Arabic-reshaper for proper Hebrew character connection
+- **RTL Alignment**: Text positioned from right edge with proper word spacing
+
+### Hebrew Reading Analysis
+- **RTL Word Detection**: Word positions calculated for right-to-left reading flow
+- **Hebrew Fixation Patterns**: Optimized for Hebrew reading behavior
+- **RTL Saccade Analysis**: Leftward eye movements and line return detection
+- **Hebrew CSV Export**: Reading data formatted for Hebrew text analysis research
 
 ### 3. Run the System
 ```bash
@@ -147,12 +202,19 @@ refactored/
 - **GridSearchCV Optimization**: Hyperparameter tuning
 - **Cross-Validation**: 3-fold validation with custom scorer
 
-### 3. Real-Time Prediction (`prediction.py`)
-- **Streamlined Pipeline**: Feature extraction → prediction → smoothing
-- **Pitch Baseline Loading**: Uses calibration-time baseline for consistency
-- **Exponential Smoothing**: Reduces prediction jitter
-- **Eye Movement Analysis**: Optional movement tracking
-- **Performance Optimized**: Minimal latency for real-time use
+### 3. Hebrew RTL Eye Movement Analysis (`eye_movement_analyzer.py`)
+- **RTL-Aware KalmanFilter**: Specialized class with reading_direction parameter
+- **Automatic RTL Detection**: EyeMovementAnalyzer switches modes based on text language
+- **Hebrew Reading Parameters**: Leftward bias, higher process noise, negative saccade direction
+- **Bilingual Support**: Seamless switching between LTR and RTL prediction modes
+
+### 4. Hebrew RTL Text Prediction (`prediction.py`)
+- **Hebrew Text Detection**: Automatic language identification and RTL mode activation
+- **RTL Text Rendering**: PIL-based Hebrew font rendering with proper character shaping
+- **RTL Word Positioning**: Right-to-left word layout matching visual Hebrew text flow
+- **RTL-Aware Eye Tracking**: Integration with Hebrew-optimized Kalman filter
+- **Bilingual Analysis**: Seamless support for both Hebrew and English text analysis
+- **Hebrew CSV Export**: Research-compatible data export for Hebrew reading studies
 
 ## 📊 Model Performance
 
@@ -173,20 +235,43 @@ refactored/
 ### Programmatic Usage
 
 ```python
-# Calibration
+# Standard Calibration and Training
 from calibration import EyeTrackerCalibrator
+from model_training import GazeModelTrainer
+
 calibrator = EyeTrackerCalibrator()
 csv_file = calibrator.run_calibration()
 
-# Training
-from model_training import GazeModelTrainer
 trainer = GazeModelTrainer()
 model_path = trainer.train_from_csv(csv_file)
 
-# Prediction
-from prediction import GazePredictor
-predictor = GazePredictor(model_path)
-predictor.run_real_time_prediction(enable_smoothing=True)
+# Hebrew RTL-Aware Prediction (NEW)
+from prediction import TextReadingGazePredictor
+
+predictor = TextReadingGazePredictor(model_path)
+# Automatically detects Hebrew text and activates RTL mode
+predictor.run_text_analysis()  # Hebrew text rendering + RTL eye tracking
+```
+
+### Hebrew RTL Configuration (NEW)
+
+```python
+# Hebrew RTL Configuration in config.py
+HEBREW_SUPPORT = True
+HEBREW_KEYWORDS = ["של", "את", "על", "אל", "עם", "בין", "אם", "מה", "זה", "הוא"]
+RTL_AUTO_DETECT = True
+RTL_DETECTION_THRESHOLD = 2
+
+# RTL Kalman Filter Parameters
+RTL_READING_BIAS = -1.2        # Leftward movement bias for Hebrew
+RTL_PROCESS_NOISE = 0.15       # Higher variability for RTL patterns
+RTL_SACCADE_DIRECTION = -1     # Negative for leftward saccades
+
+# Hebrew Text Sample in config.py
+READING_TEXT = """
+היתרונות של פעילות גופנית מתרחבים הרבה מעבר לכושר גופני בלבד. פעילות גופנית סדירה
+משפרת את בריאות הלב וכלי הדם, מחזקת שרירים ועצמות, ועוזרת לשמור על משקל בריא.
+"""
 ```
 
 ### Feature Engineering
@@ -255,12 +340,13 @@ predictor.run_real_time_prediction(
 
 ## 🔬 Research Notes
 
-### Why Multi-Output RandomForest?
-1. **Joint Optimization**: X and Y coordinates learned together
-2. **Shared Features**: Common representations reduce overfitting
-3. **Euclidean Optimization**: Direct minimization of spatial error
-4. **Efficiency**: Single model reduces computational overhead
-5. **Robustness**: Ensemble method provides stable predictions
+### Why Multi-Output RandomForest with RTL Support?
+1. **Joint Optimization**: X and Y coordinates learned together for both LTR and RTL
+2. **Shared Features**: Common representations reduce overfitting across languages
+3. **Euclidean Optimization**: Direct minimization of spatial error for multilingual text
+4. **Efficiency**: Single model reduces computational overhead for bilingual analysis
+5. **Robustness**: Ensemble method provides stable predictions for Hebrew and English
+6. **RTL Adaptability**: Same model with RTL-aware post-processing for Hebrew analysis
 
 ### Feature Engineering Rationale
 1. **Individual Eye Positions**: Raw left/right eye coordinates capture fine-grained eye movements
@@ -305,4 +391,4 @@ This is a streamlined implementation focused on multi-output RandomForest optimi
 
 ---
 
-**Built with**: RandomForest (scikit-learn), MediaPipe, OpenCV, NumPy, pandas
+**Built with**: RandomForest (scikit-learn), MediaPipe, OpenCV, NumPy, pandas, PIL (Hebrew rendering), python-bidi (RTL support), arabic-reshaper (Hebrew text processing)
