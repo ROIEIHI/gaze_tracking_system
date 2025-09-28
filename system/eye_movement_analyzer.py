@@ -28,10 +28,12 @@ class MovementMetrics:
 
 class KalmanFilter:
     """Enhanced Kalman filter optimized for text reading gaze prediction"""
-    def __init__(self, text_reading_mode=False):
+    def __init__(self, text_reading_mode=False, reading_direction="ltr"):
         # State: [x, y, vx, vy] - position and velocity
         self.state = np.zeros(4)
         self.text_reading_mode = text_reading_mode
+        self.reading_direction = reading_direction
+        self.is_rtl = (reading_direction == "rtl")
         
         if text_reading_mode:
             # Optimized parameters for text reading
@@ -52,8 +54,16 @@ class KalmanFilter:
                           [0, 1, 0, 0]])
         self.initialized = False
         
-        # Text reading specific enhancements
-        self.reading_direction_bias = 1.0  # Bias towards rightward movement
+        # Text reading specific enhancements - adjusted for reading direction
+        if self.is_rtl:
+            self.reading_direction_bias = -1.2  # Bias towards leftward movement for RTL
+            self.expected_saccade_direction = -1  # Negative for leftward saccades
+            # Adjust process noise for RTL (more variable movement patterns)
+            self.Q = np.eye(4) * 0.15  # Higher process noise for RTL
+        else:
+            self.reading_direction_bias = 1.0   # Bias towards rightward movement for LTR
+            self.expected_saccade_direction = 1   # Positive for rightward saccades
+            
         self.line_return_detected = False
         self.last_prediction = None
 
@@ -110,7 +120,7 @@ class KalmanFilter:
 class EyeMovementAnalyzer:
     """Comprehensive eye movement analysis system"""
 
-    def __init__(self, window_width=SCREEN_WIDTH, window_height=SCREEN_HEIGHT, text_reading_mode=True):
+    def __init__(self, window_width=SCREEN_WIDTH, window_height=SCREEN_HEIGHT, text_reading_mode=True, reading_direction='ltr'):
         self.window_width = window_width
         self.window_height = window_height
 
@@ -121,7 +131,7 @@ class EyeMovementAnalyzer:
         self.velocity_buffer = deque(maxlen=30)  # Store last 1 second of velocities
         
         # Kalman filter for prediction only (optimized for text reading)
-        self.kalman_filter = KalmanFilter(text_reading_mode=True)
+        self.kalman_filter = KalmanFilter(text_reading_mode=True, reading_direction=reading_direction)
         
         # Fixation detection parameters
         self.fixation_threshold_pixels = 30  # Max movement for fixation

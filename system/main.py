@@ -23,8 +23,8 @@ def main():
     
     try:
         input()
-    except KeyboardInterrupt:
-        print("\nSystem cancelled by user")
+    except (KeyboardInterrupt, EOFError):
+        print("\nSystem cancelled by user or no input available")
         return
 
     # Phase 1-2: Calibration
@@ -62,7 +62,7 @@ def main():
         input()
         predictor = TextReadingGazePredictor(model_path)
         predictor.run_text_reading_analysis()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, EOFError):
         print("Text reading analysis skipped")
 
     # System Complete

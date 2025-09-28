@@ -15,6 +15,9 @@ from typing import Tuple, Optional, List, Dict
 from config import *
 from eye_movement_analyzer import EyeMovementAnalyzer, GazePoint, MovementMetrics
 import pandas as pd
+from PIL import ImageFont, ImageDraw, Image
+import os
+import re
 
 class TextReadingGazePredictor:
     """Enhanced gaze predictor with text reading analysis capabilities"""
@@ -97,22 +100,46 @@ class TextReadingGazePredictor:
         # Clean and split text into words
         words = READING_TEXT.strip().split()
         
+        # Detect Hebrew/RTL text for proper eye tracking configuration
+        hebrew_count = sum(1 for word in words[:20] if any(keyword in word for keyword in HEBREW_KEYWORDS))
+        self.is_rtl_text = hebrew_count >= RTL_DETECTION_THRESHOLD if RTL_AUTO_DETECT else False
+        
+        if self.is_rtl_text:
+            print(f"Hebrew text detected (found {hebrew_count} Hebrew keywords) - configuring RTL mode")
+            # Re-initialize movement analyzer with RTL configuration
+            self.movement_analyzer = EyeMovementAnalyzer(
+                window_width=SCREEN_WIDTH,
+                window_height=SCREEN_HEIGHT,
+                text_reading_mode=True,
+                reading_direction='rtl'
+            )
+        else:
+            print("LTR text detected - using standard configuration")
+            
+        print(f"DEBUG: Processing {len(words)} words")
+        print(f"DEBUG: Reading direction: {'RTL' if self.is_rtl_text else 'LTR'}")
+        
         # Calculate approximate character width for better estimation
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = TEXT_FONT_SIZE / 32.0  # Match the rendering scale
-        thickness = 2
+        thickness = 4 if TEXT_FONT_BOLD else 2
         
         # Test character to estimate average character width
         char_width = cv2.getTextSize("A", font, font_scale, thickness)[0][0]
         margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
         available_width = SCREEN_WIDTH - 2 * margin_x
         
-        # More conservative estimate of words per row based on actual width
-        estimated_chars_per_row = available_width // (char_width + 2)  # +2 for spacing
-        avg_word_length = 6  # Average English word length
-        conservative_words_per_row = max(4, min(TEXT_WORDS_PER_ROW, estimated_chars_per_row // avg_word_length))
-        
-        print(f"Using {conservative_words_per_row} words per row (estimated from screen width)")
+        # Calculate words per row - check if user wants to force a specific number
+        if TEXT_FORCE_WORDS_PER_ROW is not None:
+            # User specified exact words per row
+            conservative_words_per_row = TEXT_FORCE_WORDS_PER_ROW
+            print(f"Using FORCED {conservative_words_per_row} words per row (from TEXT_FORCE_WORDS_PER_ROW)")
+        else:
+            # Automatic calculation based on screen width
+            estimated_chars_per_row = available_width // (char_width)  # +2 for spacing
+            avg_word_length = 4  # Average English word length
+            conservative_words_per_row = max(6, min(TEXT_WORDS_PER_ROW, estimated_chars_per_row + 2 // avg_word_length))
+            print(f"Using {conservative_words_per_row} words per row (estimated from screen width)")
         
         # Calculate pages based on conservative word count
         words_per_page = TEXT_ROWS_PER_PAGE * conservative_words_per_row
@@ -148,7 +175,10 @@ class TextReadingGazePredictor:
         # Create background
         background = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
         
-        # Calculate text area
+        # Check if we have Hebrew text to determine layout direction
+        is_hebrew_page = bool(re.search(r'[\u0590-\u05FF]', READING_TEXT))
+        
+        # Calculate text area with RTL consideration
         margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
         margin_y = int(SCREEN_HEIGHT * TEXT_MARGIN_Y)
         text_width = SCREEN_WIDTH - 2 * margin_x
@@ -164,7 +194,9 @@ class TextReadingGazePredictor:
         if self.current_page < len(self.text_pages):
             page_rows = self.text_pages[self.current_page]
             
-            # Render each row with width checking
+
+            
+            # Render each row with width checking and RTL layout
             for row_idx, row_words in enumerate(page_rows):
                 if row_idx >= TEXT_ROWS_PER_PAGE:
                     break
@@ -172,18 +204,35 @@ class TextReadingGazePredictor:
                 # Calculate row position
                 y = margin_y + row_idx * TEXT_LINE_SPACING + int(TEXT_FONT_SIZE)
                 
-                # Render row with width constraints
-                self._render_row_with_width_check(background, row_words, margin_x, y, font, font_scale, thickness, row_idx, text_width)
+                # Render row with width constraints and RTL support
+                self._render_row_with_width_check(background, row_words, margin_x, y, font, font_scale, thickness, row_idx, text_width, is_hebrew_page)
         
         # Add navigation info
         self._draw_navigation_info(background)
         
         return background
     
-    def _render_row_with_width_check(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, max_width):
+    def _render_row_with_width_check(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, max_width, is_hebrew_layout=False):
         """Render a row of text with width constraints and proper word wrapping"""
         
-        # First, check if all words fit in the available width
+        # Check if this row contains Hebrew
+        hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+        contains_hebrew = any(hebrew_pattern.search(word) for word in words)
+        
+        if contains_hebrew:
+            # For Hebrew text, calculate right-aligned position for RTL layout
+            if is_hebrew_layout:
+                # Calculate right boundary for RTL text - use screen right edge minus small margin
+                margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
+                right_boundary = SCREEN_WIDTH - margin_x  # Use right edge of screen area
+                
+                self._render_row_with_positions(image, words, right_boundary, start_y, font, font_scale, thickness, row_idx, rtl_layout=True)
+            else:
+                # Standard left-aligned Hebrew (for mixed content)
+                self._render_row_with_positions(image, words, start_x, start_y, font, font_scale, thickness, row_idx)
+            return
+        
+        # For English text, check if all words fit in the available width
         total_text = " ".join(words)
         total_size = cv2.getTextSize(total_text, font, font_scale, thickness)[0]
         
@@ -216,9 +265,18 @@ class TextReadingGazePredictor:
         
         if len(words) == 1:
             # Single word - center it
-            word_size = cv2.getTextSize(words[0], font, font_scale, thickness)[0]
-            x = start_x + (max_width - word_size[0]) // 2
-            cv2.putText(image, words[0], (x, start_y), font, font_scale, TEXT_COLOR, thickness)
+            # Check if this is Hebrew and use appropriate rendering
+            hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+            if hebrew_pattern.search(words[0]):
+                #print(f"DEBUG: Single Hebrew word in fitted row: '{words[0]}'")
+                # Use Hebrew rendering for single word
+                self._render_row_with_positions(image, words, start_x, start_y, font, font_scale, thickness, row_idx)
+                return
+            else:
+                # English word - use OpenCV
+                word_size = cv2.getTextSize(words[0], font, font_scale, thickness)[0]
+                x = start_x + (max_width - word_size[0]) // 2
+                cv2.putText(image, words[0], (x, start_y), font, font_scale, TEXT_COLOR, thickness)
             
             # Store word position
             self.word_positions.append({
@@ -240,13 +298,23 @@ class TextReadingGazePredictor:
         available_space = max_width - total_word_width
         space_between_words = available_space // (len(words) - 1) if len(words) > 1 else 0
         
-        # Render words with calculated spacing
+        # Check if any word is Hebrew - if so, use Hebrew rendering for entire row
+        hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+        contains_hebrew = any(hebrew_pattern.search(word) for word in words)
+        
+        if contains_hebrew:
+            #print(f"DEBUG: Hebrew words in fitted row: {words}")
+            # Use Hebrew rendering for entire row instead of word-by-word
+            self._render_row_with_positions(image, words, start_x, start_y, font, font_scale, thickness, row_idx)
+            return
+        
+        # English words - render with calculated spacing
         current_x = start_x
         
         for word_idx, word in enumerate(words):
             word_size = cv2.getTextSize(word, font, font_scale, thickness)[0]
             
-            # Render word
+            # Render word (English only at this point)
             cv2.putText(image, word, (current_x, start_y), font, font_scale, TEXT_COLOR, thickness)
             
             # Store word position
@@ -266,38 +334,357 @@ class TextReadingGazePredictor:
             
             # Move to next word position
             current_x += word_size[0] + space_between_words
-    
-    def _render_row_with_positions(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx):
-        """Render a row of text and capture precise word positions"""
-        current_x = start_x
+
+    def _render_hebrew_text(self, text, position, font_size = TEXT_FONT_SIZE, color = TEXT_COLOR, background_image = None, image_width =SCREEN_WIDTH, image_height = SCREEN_HEIGHT, rtl_align=False):
+        """Render Hebrew text using PIL and convert to OpenCV format"""
+        try:
+            # Detect if text contains Hebrew characters
+            hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+            contains_hebrew = bool(hebrew_pattern.search(text))
+
+            #print(f"DEBUG: Rendering text: '{text[:50]}...' (Hebrew: {contains_hebrew})")
+
+            # Create PIL image
+            if background_image is not None:
+                # Convert OpenCV(BGR) image to PIL(RGB)
+                pil_image = Image.fromarray(cv2.cvtColor(background_image, cv2.COLOR_BGR2RGB))
+            else:
+                pil_image = Image.new("RGB", (image_width, image_height), (255, 255, 255))
+            
+            draw = ImageDraw.Draw(pil_image)
+
+            # Load Hebrew-compatible font - be more aggressive about finding fonts
+            hebrew_font = None
+            hebrew_font_paths = [
+                "C:/Windows/Fonts/david.ttf",    # Best Hebrew font
+                "C:/Windows/Fonts/tahoma.ttf",   # Excellent Hebrew support
+                "C:/Windows/Fonts/arial.ttf",   # Good Hebrew support
+                "C:/Windows/Fonts/calibri.ttf", # Good Hebrew support
+                "tahoma.ttf", "arial.ttf", "calibri.ttf"  # System font fallbacks
+            ]
+
+            font_loaded = False
+            for font_path in hebrew_font_paths:
+                try:
+                    # Test if the font actually supports Hebrew by trying to render a Hebrew character
+                    test_font = ImageFont.truetype(font_path, font_size)
+                    
+                    # Test render a simple Hebrew character
+                    test_img = Image.new("RGB", (50, 50), (255, 255, 255))
+                    test_draw = ImageDraw.Draw(test_img)
+                    test_draw.text((10, 10), "ה", font=test_font, fill=(0, 0, 0))
+                    
+                    # If we get here without exception, the font works
+                    hebrew_font = test_font
+                    #print(f"DEBUG: Successfully loaded and tested Hebrew font: {os.path.basename(font_path)}")
+                    font_loaded = True
+                    break
+                    
+                except Exception as e:
+                    #print(f"DEBUG: Font {font_path} failed: {e}")
+                    continue
+            
+            if not font_loaded:
+                #print("DEBUG: No Hebrew font found, using default - Hebrew may show as ???")
+                hebrew_font = ImageFont.load_default()
+                
+                # Try one more fallback with a larger default font
+                try:
+                    hebrew_font = ImageFont.truetype("arial.ttf", font_size)
+                    #print("DEBUG: Using system arial.ttf as final fallback")
+                except:
+                    pass            # Handle RTL text properly
+            display_text = text
+            if contains_hebrew:
+                try:
+                    # Try to use bidi library for proper RTL handling
+                    from bidi.algorithm import get_display
+                    import arabic_reshaper
+                    
+                    # Reshape and reorder Hebrew text for proper display
+                    reshaped_text = arabic_reshaper.reshape(text)
+                    display_text = get_display(reshaped_text)
+                    #print(f"DEBUG: RTL processed successfully")
+                    
+                except ImportError:
+                    # Fallback: Simple word reversal for Hebrew
+                    words = text.split()
+                    display_text = ' '.join(reversed(words))
+                    #print(f"DEBUG: Using simple RTL fallback")
+                except Exception as e:
+                    #print(f"DEBUG: RTL processing error: {e}, using original text")
+                    display_text = text
+
+            # Adjust position for RTL alignment if needed
+            render_position = position
+            if rtl_align:
+                # For RTL: position[0] is the RIGHT boundary where text should END
+                bbox = draw.textbbox((0, 0), display_text, font=hebrew_font)
+                text_width = bbox[2] - bbox[0]
+                # Calculate text start position: right_boundary - text_width
+                text_start_x = position[0] - text_width
+                # Ensure proper left margin constraint
+                final_x = max(text_start_x, 50)
+                render_position = (final_x, position[1])
+            
+            # Render text
+            #print(f"DEBUG: Rendering at position {render_position} with font size {font_size}")
+            draw.text(render_position, display_text, font=hebrew_font, fill=color)
+            
+            # Convert back to OpenCV(BGR) format
+            result_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+            #print(f"DEBUG: Successfully rendered Hebrew text, image shape: {result_image.shape}")
+            
+            # Verify the image is valid
+            if result_image is None or result_image.size == 0:
+                print("ERROR: Rendered image is empty!")
+                return None
+                
+            return result_image
+            
+        except Exception as e:
+            print(f"ERROR in Hebrew rendering: {e}")
+            # Final fallback - return original image or create blank
+            if background_image is not None:
+                return background_image
+            else:
+                return np.zeros((image_height, image_width, 3), dtype=np.uint8)
+
+
+    def _render_row_with_positions(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, rtl_layout=False):
         
-        for word_idx, word in enumerate(words):
-            # Get word dimensions
-            word_size = cv2.getTextSize(word, font, font_scale, thickness)[0]
+        """Render a row of text with Hebrew support and capture precise word positions"""
+        
+        # Check if any word contains Hebrew - be very thorough
+        hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+        contains_hebrew = any(hebrew_pattern.search(word) for word in words)
+        
+        #print(f"DEBUG: Rendering row with {len(words)} words")
+        #print(f"DEBUG: First few words: {words[:3] if len(words) > 0 else 'None'}")
+        #print(f"DEBUG: Contains Hebrew: {contains_hebrew}")
+
+        # Double check - if we have Hebrew characters anywhere, force Hebrew rendering
+        row_text_check = " ".join(words)
+        if not contains_hebrew and hebrew_pattern.search(row_text_check):
+            contains_hebrew = True
+            #print("DEBUG: Force-enabled Hebrew rendering after full text check")
+        
+        if contains_hebrew:
+            # Use PIL for Hebrew text rendering
+            row_text = " ".join(words)
             
-            # Render word
-            cv2.putText(image, word, (current_x, start_y), font, font_scale, TEXT_COLOR, thickness)
+            # Calculate position for PIL (PIL uses top-left, OpenCV uses bottom-left)
+            pil_y = start_y - TEXT_FONT_SIZE  # Adjust for baseline difference
             
-            # Store word position for analysis
-            word_center_x = current_x + word_size[0] // 2
-            word_center_y = start_y - word_size[1] // 2
+            # For RTL layout, start_x is the RIGHT boundary where text should END
+            render_x = start_x
             
-            self.word_positions.append({
-                'word': word,
-                'x': word_center_x,
-                'y': word_center_y,
-                'row': row_idx,
-                'col': word_idx,
-                'width': word_size[0],
-                'height': word_size[1],
-                'page': self.current_page
-            })
+            # Render entire row with PIL
+            #print(f"DEBUG: About to render Hebrew row: '{row_text[:30]}...' at position ({render_x}, {pil_y}) RTL={rtl_layout}")
+            rendered_image = self._render_hebrew_text(
+                text=row_text,
+                position=(render_x, pil_y),
+                font_size=TEXT_FONT_SIZE,
+                color=TEXT_COLOR,
+                background_image=image,
+                image_width=SCREEN_WIDTH,
+                image_height=SCREEN_HEIGHT,
+                rtl_align=rtl_layout
+            )
             
-            # Move to next word position
-            current_x += word_size[0]
-            if word_idx < len(words) - 1:  # Add space except for last word
-                space_size = cv2.getTextSize(" ", font, font_scale, thickness)[0]
-                current_x += space_size[0]
+            # Explicitly copy the rendered image back
+            if rendered_image is not None:
+                image[:] = rendered_image
+                #print("DEBUG: Hebrew image copied successfully")
+            else:
+                #print("WARNING: Hebrew rendering returned None! This will cause ??? to appear.")
+                #print("DEBUG: Attempting emergency Hebrew fallback...")
+                # Emergency fallback - try simple PIL rendering without RTL
+                try:
+                    from PIL import ImageFont, ImageDraw, Image
+                    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+                    draw = ImageDraw.Draw(pil_image)
+                    try:
+                        hebrew_font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", TEXT_FONT_SIZE)
+                    except:
+                        hebrew_font = ImageFont.load_default()
+                    draw.text((start_x, pil_y), row_text, font=hebrew_font, fill=TEXT_COLOR)
+                    emergency_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
+                    image[:] = emergency_image
+                    #print("DEBUG: Emergency Hebrew rendering successful")
+                except Exception as emergency_e:
+                    #print(f"ERROR: Emergency Hebrew rendering also failed: {emergency_e}")
+                    # Only then fall back to OpenCV (will show ???)
+                    cv2.putText(image, "Hebrew text (display error)", (start_x, start_y), font, font_scale, (0, 0, 255), thickness)
+            
+            # Calculate word positions for Hebrew using PIL font metrics to match visual rendering
+            try:
+                from PIL import ImageFont, ImageDraw, Image
+                # Use the same font loading logic as _render_hebrew_text
+                hebrew_font = None
+                hebrew_font_paths = [
+                    "C:/Windows/Fonts/david.ttf", "C:/Windows/Fonts/tahoma.ttf", 
+                    "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/calibri.ttf"
+                ]
+                
+                for font_path in hebrew_font_paths:
+                    try:
+                        hebrew_font = ImageFont.truetype(font_path, TEXT_FONT_SIZE)
+                        break
+                    except:
+                        continue
+                
+                if hebrew_font is None:
+                    hebrew_font = ImageFont.load_default()
+                
+                # Create a temporary draw object to measure text
+                temp_image = Image.new("RGB", (100, 100), (255, 255, 255))
+                draw = ImageDraw.Draw(temp_image)
+                
+                # Calculate RTL positions matching _render_hebrew_text logic
+                if rtl_layout:
+                    # For RTL: calculate total text width and position from right
+                    full_text = " ".join(words)
+                    
+                    # Apply RTL processing like in _render_hebrew_text
+                    try:
+                        from bidi.algorithm import get_display
+                        import arabic_reshaper
+                        reshaped_text = arabic_reshaper.reshape(full_text)
+                        display_text = get_display(reshaped_text)
+                    except:
+                        # Fallback: simple word reversal
+                        display_words = list(reversed(words))
+                        display_text = ' '.join(display_words)
+                    
+                    # Get total text width
+                    bbox = draw.textbbox((0, 0), display_text, font=hebrew_font)
+                    total_text_width = bbox[2] - bbox[0]
+                    
+                    # For RTL: start_x is the RIGHT boundary, calculate text start position
+                    text_start_x = start_x - total_text_width
+                    final_x = max(text_start_x, 50)  # Ensure left margin
+                    
+                    # Calculate individual word positions in RTL order
+                    current_x = final_x
+                    display_words = display_text.split()
+                    
+                    for word_idx, display_word in enumerate(display_words):
+                        # Find corresponding original word (RTL reverses order)
+                        original_word_idx = len(words) - 1 - word_idx
+                        original_word = words[original_word_idx] if original_word_idx >= 0 else display_word
+                        
+                        # Get actual word width using PIL
+                        word_bbox = draw.textbbox((0, 0), display_word, font=hebrew_font)
+                        word_width = word_bbox[2] - word_bbox[0]
+                        
+                        # Calculate word center position
+                        word_center_x = current_x + word_width // 2
+                        word_center_y = start_y - TEXT_FONT_SIZE // 2
+                        
+
+                        
+                        self.word_positions.append({
+                            'word': original_word,
+                            'x': word_center_x,
+                            'y': word_center_y,
+                            'row': row_idx,
+                            'col': original_word_idx,
+                            'width': int(word_width),
+                            'height': TEXT_FONT_SIZE,
+                            'page': self.current_page
+                        })
+                        
+                        # Move to next word position (left-to-right in display order)
+                        current_x += word_width
+                        if word_idx < len(display_words) - 1:
+                            space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
+                            current_x += space_bbox[2] - space_bbox[0]
+                else:
+                    # For LTR Hebrew (mixed content): use left-aligned positions
+                    current_x = start_x
+                    for word_idx, word in enumerate(words):
+                        # Get actual word width using PIL
+                        word_bbox = draw.textbbox((0, 0), word, font=hebrew_font)
+                        word_width = word_bbox[2] - word_bbox[0]
+                        
+                        # Calculate word center position
+                        word_center_x = current_x + word_width // 2
+                        word_center_y = start_y - TEXT_FONT_SIZE // 2
+                        
+                        self.word_positions.append({
+                            'word': word,
+                            'x': word_center_x,
+                            'y': word_center_y,
+                            'row': row_idx,
+                            'col': word_idx,
+                            'width': int(word_width),
+                            'height': TEXT_FONT_SIZE,
+                            'page': self.current_page
+                        })
+                        
+                        # Move to next word position
+                        current_x += word_width
+                        if word_idx < len(words) - 1:
+                            space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
+                            current_x += space_bbox[2] - space_bbox[0]
+                            
+            except Exception as e:
+                print(f"ERROR in Hebrew word position calculation: {e}")
+                # Fallback to simple approximation
+                current_x = start_x
+                font_size_px = TEXT_FONT_SIZE * 0.6
+                
+                for word_idx, word in enumerate(words):
+                    word_width = len(word) * font_size_px * 0.8 if hebrew_pattern.search(word) else len(word) * font_size_px * 0.6
+                    word_center_x = current_x + word_width // 2
+                    word_center_y = start_y - font_size_px // 2
+                    
+                    self.word_positions.append({
+                        'word': word,
+                        'x': word_center_x,
+                        'y': word_center_y,
+                        'row': row_idx,
+                        'col': word_idx,
+                        'width': int(word_width),
+                        'height': TEXT_FONT_SIZE,
+                        'page': self.current_page
+                    })
+                    
+                    current_x += word_width + font_size_px * 0.3
+        
+        else:
+            # Use original OpenCV rendering for English
+            current_x = start_x
+            
+            for word_idx, word in enumerate(words):
+                # Get word dimensions
+                word_size = cv2.getTextSize(word, font, font_scale, thickness)[0]
+                
+                # Render word
+                cv2.putText(image, word, (current_x, start_y), font, font_scale, TEXT_COLOR, thickness)
+                
+                # Store word position for analysis
+                word_center_x = current_x + word_size[0] // 2
+                word_center_y = start_y - word_size[1] // 2
+                
+                self.word_positions.append({
+                    'word': word,
+                    'x': word_center_x,
+                    'y': word_center_y,
+                    'row': row_idx,
+                    'col': word_idx,
+                    'width': word_size[0],
+                    'height': word_size[1],
+                    'page': self.current_page
+                })
+                
+                # Move to next word position
+                current_x += word_size[0]
+                if word_idx < len(words) - 1:  # Add space except for last word
+                    space_size = cv2.getTextSize(" ", font, font_scale, thickness)[0]
+                    current_x += space_size[0]
+
     
     def _draw_navigation_info(self, image):
         """Draw page navigation and controls"""
@@ -327,20 +714,22 @@ class TextReadingGazePredictor:
         results = self.face_mesh.process(rgb_frame)
         
         if not results.multi_face_landmarks:
-            return None
+            return None, None, None # gaze point, blink, pupil size
         
         face_landmarks = results.multi_face_landmarks[0]
         
         # Extract features (simplified - adapt to your feature extraction logic)
         features = self._extract_features(face_landmarks, frame.shape)
         
-        if features and self.model:
-            # Predict gaze point
-            prediction = self._predict_gaze_point(features)
-            return prediction
         
-        return None
-    
+        # Calculate pupil size and blink detection
+        prediction = self._predict_gaze_point(features)
+        pupil_size = self._calculate_pupil_size(face_landmarks, frame.shape)
+        current_blink = self._detect_blink(face_landmarks)
+        blink_frequency = self._update_blink_frequency(current_blink)
+
+        return prediction, blink_frequency, pupil_size
+
     def _calculate_head_pose(self, landmarks, frame_shape):
         """Calculate head pose using PnP algorithm"""
         h, w = frame_shape[:2]
@@ -402,7 +791,6 @@ class TextReadingGazePredictor:
             
         except Exception as e:
             return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
-
     
     def _extract_features(self, landmarks, frame_shape):
         """Extract features from face landmarks using your calibration logic"""
@@ -446,6 +834,105 @@ class TextReadingGazePredictor:
                 pose['pitch'], pose['yaw'], pose['roll'],
                 pose['tvect_x'], pose['tvect_y'], pose['tvect_z']]
     
+    def _calculate_pupil_size(self, landmarks, frame_shape):
+        """Calculate relative pupil size and print values"""
+        try:
+            h, w = frame_shape[:2]
+            
+            # Get left and right iris landmarks
+            left_iris_points = np.array([[landmarks.landmark[i].x * w, landmarks.landmark[i].y * h] 
+                                    for i in LEFT_IRIS_LANDMARKS])
+            right_iris_points = np.array([[landmarks.landmark[i].x * w, landmarks.landmark[i].y * h] 
+                                        for i in RIGHT_IRIS_LANDMARKS])
+            
+            # Calculate iris diameters
+            left_iris_width = np.max(left_iris_points[:, 0]) - np.min(left_iris_points[:, 0])
+            left_iris_height = np.max(left_iris_points[:, 1]) - np.min(left_iris_points[:, 1])
+            right_iris_width = np.max(right_iris_points[:, 0]) - np.min(right_iris_points[:, 0])
+            right_iris_height = np.max(right_iris_points[:, 1]) - np.min(right_iris_points[:, 1])
+            
+            # Average iris size
+            left_iris_size = (left_iris_width + left_iris_height) / 2
+            right_iris_size = (right_iris_width + right_iris_height) / 2
+            avg_pupil_size = (left_iris_size + right_iris_size) / 2
+            
+            # DEBUG: Print values
+            #print(f"DEBUG - Left iris: {left_iris_width:.2f}x{left_iris_height:.2f}")
+            #print(f"DEBUG - Right iris: {right_iris_width:.2f}x{right_iris_height:.2f}")
+            #print(f"DEBUG - Average raw size: {avg_pupil_size:.2f}")
+            
+            # FIXED normalization
+            normalized_pupil_size = 2.0 + (avg_pupil_size / 50.0) * 3.0  # Better scaling
+            normalized_pupil_size = max(2.0, min(6.0, normalized_pupil_size))
+
+            #print(f"DEBUG - Normalized pupil size: {normalized_pupil_size:.2f}")
+
+            return normalized_pupil_size
+            
+        except Exception as e:
+            print(f"Pupil size error: {e}")
+            return 0.0  # Default size
+
+    def _detect_blink(self, landmarks):
+        """Detect blink based on eye aspect ratio"""
+        try:
+            # Eye landmarks for blink detection
+            left_eye_landmarks = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
+            right_eye_landmarks = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+            
+            def eye_aspect_ratio(eye_landmarks):
+                # Get vertical distances
+                A = np.linalg.norm(np.array([landmarks.landmark[eye_landmarks[1]].x, landmarks.landmark[eye_landmarks[1]].y]) - 
+                                np.array([landmarks.landmark[eye_landmarks[5]].x, landmarks.landmark[eye_landmarks[5]].y]))
+                B = np.linalg.norm(np.array([landmarks.landmark[eye_landmarks[2]].x, landmarks.landmark[eye_landmarks[2]].y]) - 
+                                np.array([landmarks.landmark[eye_landmarks[4]].x, landmarks.landmark[eye_landmarks[4]].y]))
+                # Get horizontal distance
+                C = np.linalg.norm(np.array([landmarks.landmark[eye_landmarks[0]].x, landmarks.landmark[eye_landmarks[0]].y]) - 
+                                np.array([landmarks.landmark[eye_landmarks[3]].x, landmarks.landmark[eye_landmarks[3]].y]))
+                return (A + B) / (2.0 * C)
+            
+            # Calculate EAR for both eyes
+            left_ear = eye_aspect_ratio(left_eye_landmarks[:6])  # Use first 6 points for calculation
+            right_ear = eye_aspect_ratio(right_eye_landmarks[:6])
+            avg_ear = (left_ear + right_ear) / 2.0
+            
+            # Blink threshold (lower = more closed)
+            blink_threshold = 0.21
+            return 1.0 if avg_ear < blink_threshold else 0.0
+            
+        except Exception as e:
+            return 0.0  # Default no blink
+
+    def _update_blink_frequency(self, current_blink):
+        """Track blink frequency over time"""
+        if not hasattr(self, 'blink_history'):
+            self.blink_history = []
+            self.last_blink_state = 0.0
+        
+        # Add to history with timestamp
+        current_time = time.time()
+        self.blink_history.append((current_time, current_blink))
+        
+        # Remove old entries (keep last 60 seconds)
+        self.blink_history = [(t, b) for t, b in self.blink_history if current_time - t <= 60.0]
+        
+        # Count blink events (transitions from 0 to 1)
+        blink_count = 0
+        for i in range(1, len(self.blink_history)):
+            if self.blink_history[i][1] > 0.5 and self.blink_history[i-1][1] <= 0.5:
+                blink_count += 1
+        
+        # Calculate frequency (blinks per minute)
+        time_window = 60.0 if len(self.blink_history) > 1 else 1.0
+        if len(self.blink_history) > 1:
+            actual_time_window = min(60.0, current_time - self.blink_history[0][0])
+            blink_frequency = (blink_count / actual_time_window) * 60.0  # Convert to per minute
+        else:
+            blink_frequency = 0.0
+        
+        self.last_blink_state = current_blink
+        return blink_frequency
+
     def _predict_gaze_point(self, features):
         """Predict gaze point from features using trained model"""
         try:
@@ -481,7 +968,7 @@ class TextReadingGazePredictor:
             print(f"Prediction error: {e}")
             return (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
     
-    def _add_gaze_point_to_analysis(self, x, y):
+    def _add_gaze_point_to_analysis(self, x, y, pupil_size, blink_frequency):
         """Add gaze point to movement analysis"""
         if self.analysis_enabled:
             # Add to Kalman filter
@@ -500,19 +987,21 @@ class TextReadingGazePredictor:
             # Get movement metrics
             try:
                 metrics = self.movement_analyzer.get_analysis_summary()
-                current_velocity = getattr(metrics, 'current_velocity', 0) if hasattr(metrics, 'current_velocity') else 0
+                current_velocity = metrics.get('current_velocity', 0)
             except:
                 current_velocity = 0
             
             # Store fixation data
-            if current_velocity < SACCADE_VELOCITY_THRESHOLD:  # THIS IS THE LINE YOU ASKED ABOUT
+            if current_velocity < SACCADE_VELOCITY_THRESHOLD:  
                 self.fixation_data.append({
                     'timestamp': current_time,
                     'x': x,
                     'y': y,
                     'word': nearest_word,
                     'time_from_onset': time_from_onset,
-                    'page': self.current_page
+                    'page': self.current_page,
+                    'pupil_size': pupil_size,
+                    'blink_frequency': blink_frequency
                 })
     
     def _find_nearest_word(self, gaze_x, gaze_y):
@@ -556,7 +1045,9 @@ class TextReadingGazePredictor:
                     'x_positions': [data['x']],
                     'y_positions': [data['y']],
                     'word': data['word'],
-                    'time_from_onset': data['time_from_onset']
+                    'time_from_onset': data['time_from_onset'],
+                    'pupil_size': data.get('pupil_size', 0),
+                    'blink_frequency': data.get('blink_frequency', 0)
                 }
             else:
                 # Check if this continues the current fixation
@@ -566,6 +1057,9 @@ class TextReadingGazePredictor:
                     current_fixation['end_time'] = data['timestamp']
                     current_fixation['x_positions'].append(data['x'])
                     current_fixation['y_positions'].append(data['y'])
+                    current_fixation['time_from_onset'] = data['time_from_onset']
+                    current_fixation['pupil_size'] = data.get('pupil_size', 0)
+                    current_fixation['blink_frequency'] = data.get('blink_frequency', 0)
                 else:  # New fixation
                     # Process completed fixation
                     duration = (current_fixation['end_time'] - current_fixation['start_time']) * 1000
@@ -573,7 +1067,9 @@ class TextReadingGazePredictor:
                     if duration >= FIXATION_THRESHOLD:  # Only include significant fixations
                         avg_x = np.mean(current_fixation['x_positions'])
                         avg_y = np.mean(current_fixation['y_positions'])
-                        
+                        avg_pupil_size = np.mean(current_fixation['pupil_size'])
+                        avg_blink_frequency = np.mean(current_fixation['blink_frequency'])
+
                         processed_fixations.append({
                             'Fixation_Order': fixation_order,
                             'Fixated_Word': current_fixation['word'],
@@ -581,8 +1077,8 @@ class TextReadingGazePredictor:
                             'Fixation_Y_Screen': round(avg_y, 2),
                             'Fixation_Duration': round(duration, 2),
                             'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
-                            'Pupil_Size': 3.87,  # Placeholder - implement pupil size detection
-                            'Blink_Frequency': 0.0  # Placeholder - implement blink detection
+                            'Pupil_Size': round(avg_pupil_size, 2), 
+                            'Blink_Frequency': round(avg_blink_frequency, 2)
                         })
                         fixation_order += 1
                     
@@ -593,7 +1089,9 @@ class TextReadingGazePredictor:
                         'x_positions': [data['x']],
                         'y_positions': [data['y']],
                         'word': data['word'],
-                        'time_from_onset': data['time_from_onset']
+                        'time_from_onset': data['time_from_onset'],
+                        'pupil_size': data.get('pupil_size', 0),
+                        'blink_frequency': data.get('blink_frequency', 0)
                     }
         
         # Process final fixation
@@ -610,8 +1108,8 @@ class TextReadingGazePredictor:
                     'Fixation_Y_Screen': round(avg_y, 2),
                     'Fixation_Duration': round(duration, 2),
                     'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
-                    'Pupil_Size': 3.87,
-                    'Blink_Frequency': 0.0
+                    'Pupil_Size': round(avg_pupil_size,2),
+                    'Blink_Frequency': round(avg_blink_frequency,2)
                 })
         
         # Create DataFrame and export
@@ -622,7 +1120,7 @@ class TextReadingGazePredictor:
             filepath = os.path.join(OUTPUT_DIR, filename)
             
             df.to_csv(filepath, index=False)
-            print(f"✅ Exported {len(processed_fixations)} fixations to: {filepath}")
+            print(f"Exported {len(processed_fixations)} fixations to: {filepath}")
             return filepath
         
         return None
@@ -630,10 +1128,12 @@ class TextReadingGazePredictor:
     def run_text_reading_analysis(self):
         """Run the complete text reading analysis system"""
         if self.model is None:
-            print("❌ No model loaded. Please load a model first.")
+            print("No model loaded. Please load a model first.")
             return
         
-        print("🎯 Starting Text Reading Analysis System...")
+        self.movement_analyzer.start_reading_session()  # Reset analyzer
+        
+        print("Starting Text Reading Analysis System...")
         print("=" * 60)
         print("Controls:")
         print("  ESC - Exit and export data")
@@ -659,7 +1159,7 @@ class TextReadingGazePredictor:
                 frame = cv2.flip(frame, 1)  # Mirror image
                 
                 # Predict gaze point
-                prediction = self._detect_face_and_predict(frame)
+                prediction, pupil_size, blink_frequency = self._detect_face_and_predict(frame)
                 
                 # Create text display
                 text_display = self._render_text_page()
@@ -678,7 +1178,7 @@ class TextReadingGazePredictor:
                     smoothed_y = int(self.smoothed_y)
                     
                     # Add to analysis
-                    self._add_gaze_point_to_analysis(smoothed_x, smoothed_y)
+                    self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
                     
                     # Draw gaze point (semi-transparent)
                     overlay = text_display.copy()
@@ -720,21 +1220,21 @@ class TextReadingGazePredictor:
             
             csv_file = self._export_fixation_data()
             if csv_file:
-                print(f"📊 Eye movement data exported to: {csv_file}")
+                print(f"Eye movement data exported to: {csv_file}")
                 print("Data format matches your example CSV structure")
             
-            print("🎉 Text Reading Analysis Complete!")
+            print("Text Reading Analysis Complete!")
 
 def main():
     """Main function for testing"""
-    print("🎯 Text Reading Gaze Analysis System")
+    print("Text Reading Gaze Analysis System")
     print("=" * 50)
     
     # Check for trained model
     model_path = os.path.join(MODELS_DIR, "gaze_model.pkl")
     
     if not os.path.exists(model_path):
-        print(f"❌ Model not found: {model_path}")
+        print(f"Model not found: {model_path}")
         print("Please train a model first using the main system")
         return
     
