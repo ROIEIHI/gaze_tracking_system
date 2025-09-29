@@ -10,13 +10,6 @@ This system provides real-time eye tracking with specialized support for bidirec
 
 Navigate to the system directory and run the automated setup:
 
-### Windows
-```batch
-cd system/
-setup.bat
-```
-
-### All Platforms
 ```bash
 cd system/
 python setup.py
@@ -125,10 +118,8 @@ system/
 ├── eye_movement_analyzer.py  # Kalman filtering and movement analysis
 ├── config.py                 # System configuration parameters
 ├── requirements.txt          # Python dependencies
-├── setup.bat                 # Windows automated setup
-├── setup.py                  # Cross-platform setup
-├── start.bat                 # Windows launcher
-└── start.py                  # Cross-platform launcher
+├── setup.py                  # System setup script
+└── start.py                  # System launcher
 ```
 
 ### Data Organization

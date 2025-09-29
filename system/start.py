@@ -58,8 +58,7 @@ def main():
             print(f"  • {pkg}")
         print()
         print("Please run the setup script first:")
-        print("  Windows: setup.bat")
-        print("  All platforms: python setup.py")
+        print("  python setup.py")
         print()
         
         response = input("Continue anyway? (y/N): ").lower().strip()

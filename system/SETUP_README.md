@@ -26,12 +26,7 @@ Navigate to the system directory:
 cd path/to/gaze_tracking_system/system
 ```
 
-#### Windows
-```batch
-setup.bat
-```
-
-#### All Platforms
+#### Run Setup
 ```bash
 python setup.py 
 ```
@@ -104,12 +99,8 @@ cd system/
 python main.py
 ```
 
-### Quick Launch Scripts
+### Launch the System
 ```bash
-# Windows
-start.bat
-
-# All platforms
 python start.py
 ```
 

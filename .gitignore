@@ -52,7 +52,6 @@ calibration_data/*.csv
 # ================================================================
 
 # Exclude all directories except system/
-/refactored/
 /calibration_data/
 /eye_tracking_data/
 /movement_data/
@@ -95,10 +94,6 @@ old/
 !.gitignore
 !README.md
 !requirements.txt
-refactored/comprehensive_comparison.py
-refactored/enhanced_training.py
-refactored/fair_comparison.py
-refactored/gaze_tracking_refactored.py
 
 # Temporary files
 *.tmp

@@ -43,7 +43,7 @@ def check_python_version():
 
 def install_package(package_name):
     """Install a single package with error handling"""
-    command = f"{sys.executable} -m pip install {package_name}"
+    command = f'"{sys.executable}" -m pip install {package_name}'
     return run_command(command, f"Installing {package_name}")
 
 def verify_installation(package_name, import_name=None):
@@ -94,7 +94,7 @@ def main():
     
     # Step 2: Upgrade pip
     print("\n[STEP 2/6] Upgrading pip...")
-    if not run_command(f"{sys.executable} -m pip install --upgrade pip", "Upgrading pip"):
+    if not run_command(f'"{sys.executable}" -m pip install --upgrade pip', "Upgrading pip"):
         print("[WARNING] Pip upgrade failed, continuing anyway...")
     
     # Step 3: Install requirements from file
@@ -102,7 +102,7 @@ def main():
     requirements_file = Path(__file__).parent / "requirements.txt"
     
     if requirements_file.exists():
-        if not run_command(f"{sys.executable} -m pip install -r {requirements_file}", 
+        if not run_command(f'"{sys.executable}" -m pip install -r "{requirements_file}"', 
                           "Installing requirements"):
             print("[ERROR] Failed to install requirements")
             return 1
@@ -193,7 +193,7 @@ def main():
     # System-specific instructions
     system = platform.system()
     if system == "Windows":
-        print("Windows users: You can also run 'setup.bat' for automated setup")
+        print("Windows users: Run 'python start.py' to launch the system")
     elif system == "Darwin":
         print("macOS users: Make sure Xcode command line tools are installed")
     elif system == "Linux":

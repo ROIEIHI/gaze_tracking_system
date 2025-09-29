@@ -303,7 +303,7 @@ class GazeTrackingGUI:
         """Create user session directory"""
         self.user_name = self.name_var.get().strip().replace(" ", "_")
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.session_dir = os.path.join(OUTPUT_DIR, f"{self.user_name}_{timestamp}")
+        self.session_dir = os.path.join(USER_DATA_DIR, f"{self.user_name}_{timestamp}")
         
         # Create directories
         for subdir in ["calibration", "models", "analysis"]:

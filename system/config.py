@@ -20,9 +20,10 @@ CAMERA_INDEX = 0
 CALIBRATION_DATA_DIR = "calibration_data"
 MODELS_DIR = "models"
 OUTPUT_DIR = "eye_tracking_data"
+USER_DATA_DIR = "user_data"
 
 # Ensure directories exist
-for directory in [CALIBRATION_DATA_DIR, MODELS_DIR, OUTPUT_DIR]:
+for directory in [CALIBRATION_DATA_DIR, MODELS_DIR, OUTPUT_DIR, USER_DATA_DIR]:
     os.makedirs(directory, exist_ok=True)
 
 # ============================================================================
