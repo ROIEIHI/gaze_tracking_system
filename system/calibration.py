@@ -16,8 +16,10 @@ from config import *
 class GazeCalibrator:
     """Main calibration class handling all calibration processes"""
     
-    def __init__(self):
+    def __init__(self, output_dir: str = None):
         """Initialize the calibrator with MediaPipe and OpenCV setup"""
+        # Set output directory (use provided or default)
+        self.output_dir = output_dir if output_dir is not None else CALIBRATION_DATA_DIR
         # MediaPipe setup
         self.mp_face_mesh = mp.solutions.face_mesh
         self.mp_drawing = mp.solutions.drawing_utils
@@ -644,10 +646,13 @@ class GazeCalibrator:
         # Reorder columns
         df = df[target_columns]
         
-        # Generate filename
+        # Generate filename using output directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"calibration_data_{timestamp}.csv"
-        filepath = os.path.join(CALIBRATION_DATA_DIR, filename)
+        filepath = os.path.join(self.output_dir, filename)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
         
         # Save to CSV
         df.to_csv(filepath, index=False)
@@ -656,7 +661,8 @@ class GazeCalibrator:
         print(f"Total samples: {len(df)}")
         print(f"Features: {FEATURE_COLUMNS}")
         
-        return filepath
+        # Return absolute path to ensure consistency
+        return os.path.abspath(filepath)
     
     def run_full_calibration(self) -> str:
         """Run the complete calibration process"""

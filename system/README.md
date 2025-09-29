@@ -2,6 +2,8 @@
 
 A **professional-grade multilingual eye tracking system** with advanced support for Hebrew right-to-left (RTL) text reading analysis. This system provides comprehensive gaze tracking capabilities with RTL-aware prediction algorithms, adaptive Hebrew text rendering, and detailed movement metrics optimized for both Hebrew and English reading research.
 
+> **🚀 NEW: Plug & Play Setup** - Complete automated installation with one-click deployment scripts. Clone the repository and run `setup.bat` (Windows) or `python setup.py` (all platforms) for instant setup on any computer!
+
 ## ✨ Key Features
 
 ### 🔄 **RTL-Aware Eye Tracking (NEW)**
@@ -40,34 +42,119 @@ A **professional-grade multilingual eye tracking system** with advanced support 
 - **Session-based tracking** with detailed metrics
 - **Compatible with eye tracking research standards**
 
-## 🚀 Quick Start
+## 🎁 **Plug & Play Deployment**
 
-### 1. Prerequisites
+### ⚡ **One-Click Setup**
+- **Automated installation scripts** for Windows and all platforms
+- **Dependency auto-detection** with intelligent error handling
+- **Project structure creation** with proper directory organization
+- **System validation** with comprehensive compatibility checks
+
+### 🚀 **Quick Deployment Features**
+- **Clone and run** - minimal manual configuration required
+- **Cross-platform support** - Windows, macOS, and Linux ready
+- **Session management** - automatic user directory creation
+- **Professional GUI** - no command line knowledge needed
+- **Comprehensive documentation** - detailed setup guides included
+
+### 📁 **Ready-to-Use Structure**
 ```bash
-# Required Python packages for Hebrew RTL support
-pip install opencv-python mediapipe pandas numpy scikit-learn joblib
-pip install pillow python-bidi arabic-reshaper  # For Hebrew text rendering
+git clone [repository]
+cd gaze_tracking_system/system
+setup.bat          # Windows: Double-click to install
+# or
+python setup.py    # All platforms: Automated setup
+python gui.py      # Start the professional interface
 ```
 
-### 2. System Setup
+## 🚀 Quick Setup (Plug & Play)
+
+### 🎯 **Automated Installation (Recommended)**
+
+**For Windows:**
+```batch
+# Navigate to system directory
+cd system/
+
+# Run automated setup (installs everything)
+setup.bat
+```
+
+**For All Platforms:**
 ```bash
-# Run the main system
+# Navigate to system directory
+cd system/
+
+# Run cross-platform setup
+python setup.py
+```
+
+The automated setup will:
+- ✅ Verify Python 3.8+ installation
+- ✅ Install all required packages automatically
+- ✅ Verify Hebrew text processing libraries
+- ✅ Create necessary project directories
+- ✅ Test camera and system compatibility
+- ✅ Provide troubleshooting guidance if needed
+
+### 🎮 **Quick Launch**
+
+After setup, start the system easily:
+
+**Windows Quick Start:**
+```batch
+# Double-click or run:
+start.bat
+```
+
+**Cross-Platform:**
+```bash
+python start.py
+# or
+python gui.py
+```
+
+### 📦 **What Gets Installed**
+
+The system automatically installs:
+- **Core Computer Vision**: OpenCV, MediaPipe
+- **Machine Learning**: scikit-learn, NumPy, pandas, scipy, joblib  
+- **Hebrew RTL Support**: python-bidi, arabic-reshaper, Pillow
+- **GUI Framework**: tkinter (usually built-in)
+- **Optional**: matplotlib, seaborn for data visualization
+
+### 🆘 **Need Help?**
+- See `SETUP_README.md` for detailed troubleshooting
+- All setup files are in the `system/` directory
+- System tested on Windows 10/11, macOS, and Linux
+
+## 🎯 Using the System
+
+### 1. **Professional GUI Interface**
+```bash
+python gui.py
+```
+- Modern tkinter-based interface
+- Complete workflow management  
+- Session-based directory organization
+- Real-time progress tracking
+- Hebrew RTL-aware text analysis
+
+### 2. **Command Line Interface** 
+```bash
 python main.py
-
-# Follow the interactive menu:
-# 1. Calibration (required first time)
-# 2. Model Training (after calibration)
-# 3. Hebrew RTL Reading Analysis (NEW)
-# 3. Reading Analysis (after training)
 ```
+- Interactive menu system
+- Step-by-step workflow
+- Manual control over each component
 
-### 3. Calibration Process
+### 3. **Calibration Process**
 - **Position yourself** 60-80cm from the screen
 - **Follow the red circles** that appear on screen
 - **Keep your head stable** during each calibration point
 - **21 strategic points + grid points** for comprehensive coverage
 
-### 4. Hebrew RTL Reading Analysis
+### 4. **Hebrew RTL Reading Analysis**
 - **Automatic Hebrew detection** and RTL mode activation
 - **ESC**: Exit and export Hebrew reading data
 - **A/D**: Navigate between Hebrew text pages (RTL-aware)
@@ -94,22 +181,40 @@ system/
 - **Hebrew Font Rendering**: PIL-based rendering with bidi/arabic-reshaper support
 - **RTL Word Positioning**: Hebrew text layout with proper right-to-left alignment
 
-### 1. First-Time Setup (New Computer)
-```bash
-# Download and run the setup script
-python setup_environment.py
-```
-This script will:
-- Check Python version compatibility (3.8+)
-- Install all required packages automatically
-- Test camera and MediaPipe functionality
-- Create necessary directory structure
-- Verify installation
+## 🛠 Setup Files Reference
 
-### 2. Manual Installation (Alternative)
+The system includes comprehensive setup automation:
+
+### **Setup Scripts**
+- `setup.bat` - Windows automated installation
+- `setup.py` - Cross-platform Python setup script
+- `start.bat` - Windows quick launcher
+- `start.py` - Cross-platform launcher
+- `requirements.txt` - Python package dependencies
+- `SETUP_README.md` - Detailed setup documentation
+
+### **Manual Installation (If Needed)**
 ```bash
-pip install scikit-learn pandas numpy opencv-python mediapipe joblib
-pip install pillow python-bidi arabic-reshaper  # For Hebrew RTL support
+pip install -r requirements.txt
+```
+
+Or install packages individually:
+```bash
+pip install opencv-python>=4.8.0 mediapipe>=0.10.0
+pip install numpy>=1.24.0 pandas>=2.0.0 scikit-learn>=1.3.0
+pip install pillow>=10.0.0 python-bidi>=0.4.2 arabic-reshaper>=3.0.0
+```
+
+### **Directory Structure Created**
+After setup, the system creates:
+```
+gaze_tracking_system/
+├── system/              # Core system files
+├── calibration_data/    # Calibration files  
+├── eye_tracking_data/   # Session data with user directories
+├── models/             # Trained ML models
+├── movement_data/      # Movement analysis files
+└── user_data/          # User session directories (USERNAME_TIMESTAMP format)
 ```
 
 ## 🇮🇱 Hebrew RTL Features (NEW)
@@ -153,21 +258,41 @@ saccade_direction = -1          # Negative (leftward)
 python main.py
 ```
 
-### 4. Choose Your Workflow
-- **Run Calibration**: Collect training data (21-point calibration with pitch baseline)
-- **Train Model**: Build optimized RandomForest model
-- **Real-Time Prediction**: Use trained model for live gaze tracking
-- **Complete Workflow**: Run all steps in sequence
+### 5. **Workflow Options**
+- **Complete Workflow** (GUI): Full session with calibration → training → analysis
+- **Step-by-Step** (CLI): Individual components with manual control
+- **Hebrew RTL Analysis**: Specialized Hebrew text reading analysis
+- **Session Management**: User-specific directories with timestamp organization
 
-## Setup Scripts
+## 🔧 Installation Troubleshooting
 
-For new installations, the following helper scripts are available in the repository:
-- `setup_environment.py` - Comprehensive automated setup for new computers
-- `requirements.txt` - Package dependencies list  
-- `validate_setup.py` - System validation tool
-- `SETUP_SUMMARY.md` - Detailed documentation of the setup system
+### **Common Setup Issues**
 
-**Recommended**: Use `python setup_environment.py` for hassle-free installation on new systems.
+| Issue | Solution |
+|-------|----------|
+| Python not found | Install Python 3.8+ and add to PATH |
+| Camera access denied | Check privacy settings, close other camera apps |
+| Package installation fails | Run as Administrator, upgrade pip: `python -m pip install --upgrade pip` |
+| MediaPipe errors | Install Visual C++ Redistributable (Windows) |
+| Hebrew text not displaying | Verify python-bidi and arabic-reshaper installation |
+| tkinter missing | Reinstall Python with tkinter or install python3-tk (Linux) |
+
+### **System Requirements**
+- **Python**: 3.8 or higher
+- **RAM**: 8GB minimum, 16GB recommended
+- **Camera**: USB webcam or built-in (720p+ recommended)
+- **OS**: Windows 10+, macOS 10.15+, or Linux Ubuntu 20.04+
+
+### **Verification Test**
+After installation, run this quick test:
+```python
+python -c "
+import cv2, mediapipe, numpy, pandas, sklearn
+from bidi.algorithm import get_display
+import arabic_reshaper, tkinter
+print('✅ All dependencies installed successfully!')
+"
+```
 
 ## Project Structure
 

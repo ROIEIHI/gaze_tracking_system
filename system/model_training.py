@@ -19,9 +19,10 @@ from config import *
 class GazeModelTrainer:
     """Main model training class"""
     
-    def __init__(self, calibration_file: str):
-        """Initialize trainer with calibration data file"""
+    def __init__(self, calibration_file: str, output_dir: str = None):
+        """Initialize trainer with calibration data file and output directory"""
         self.calibration_file = calibration_file
+        self.output_dir = output_dir if output_dir is not None else MODELS_DIR
         self.df = None
         self.X_train = None
         self.X_test = None
@@ -244,19 +245,22 @@ class GazeModelTrainer:
         model_filename = "gaze_model.pkl"
         scaler_filename = "scaler.pkl"
 
-        model_path = os.path.join(MODELS_DIR, model_filename)
-        scaler_path = os.path.join(MODELS_DIR, scaler_filename)
+        model_path = os.path.join(self.output_dir, model_filename)
+        scaler_path = os.path.join(self.output_dir, scaler_filename)
         
         # Save model and scaler
         joblib.dump(self.model, model_path)
         joblib.dump(self.scaler, scaler_path)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
         
         print(f"Model saved: {model_path}")
         print(f"Scaler saved: {scaler_path}")
         
         # Save model info
         info_filename = "model_info.txt"
-        info_path = os.path.join(MODELS_DIR, info_filename)
+        info_path = os.path.join(self.output_dir, info_filename)
         
         with open(info_path, 'w') as f:
             f.write("Gaze Tracking Model Information\n")
@@ -270,7 +274,8 @@ class GazeModelTrainer:
             for key, value in self.training_results.items():
                 f.write(f"{key}: {value}\n")
         
-        return model_path
+        # Return absolute path to ensure consistency
+        return os.path.abspath(model_path)
     
     def train_complete_model(self) -> str:
         """Run complete model training pipeline"""

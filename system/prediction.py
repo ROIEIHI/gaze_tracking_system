@@ -22,9 +22,12 @@ import re
 class TextReadingGazePredictor:
     """Enhanced gaze predictor with text reading analysis capabilities"""
     
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str = None, output_dir: str = None):
         """Initialize the enhanced gaze predictor"""
         print("Initializing Text Reading Gaze Predictor...")
+        
+        # Set output directory
+        self.output_dir = output_dir if output_dir is not None else OUTPUT_DIR
         
         # MediaPipe setup
         self.mp_face_mesh = mp.solutions.face_mesh
@@ -116,8 +119,7 @@ class TextReadingGazePredictor:
         else:
             print("LTR text detected - using standard configuration")
             
-        print(f"DEBUG: Processing {len(words)} words")
-        print(f"DEBUG: Reading direction: {'RTL' if self.is_rtl_text else 'LTR'}")
+
         
         # Calculate approximate character width for better estimation
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -1117,7 +1119,7 @@ class TextReadingGazePredictor:
             df = pd.DataFrame(processed_fixations)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"eye_movement_data_{timestamp}.csv"
-            filepath = os.path.join(OUTPUT_DIR, filename)
+            filepath = os.path.join(self.output_dir, filename)
             
             df.to_csv(filepath, index=False)
             print(f"Exported {len(processed_fixations)} fixations to: {filepath}")
