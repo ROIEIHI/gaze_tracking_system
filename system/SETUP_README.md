@@ -1,337 +1,218 @@
-# Gaze Tracking System - Setup Guide
+# Setup Guide - Eye Movement Tracking System
 
-## Hebrew RTL-Aware Eye Movement Tracking System
+Complete installation and configuration guide for the multilingual gaze tracking system.
 
-This guide will help you set up the gaze tracking system on any computer after cloning the repository.
+## System Requirements
 
----
+**Minimum Requirements:**
+- Python 3.8 or higher
+- 8GB RAM (16GB recommended)
+- USB webcam or built-in camera (720p+ recommended)
+- 2GB free storage space
 
-## 🚀 Quick Setup (Recommended)
+**Supported Platforms:**
+- Windows 10/11
+- macOS 10.15+  
+- Linux Ubuntu 20.04+
 
-### For Windows Users
-1. Open Command Prompt or PowerShell as Administrator
-2. Navigate to the `system/` directory:
-   ```batch
-   cd path\to\gaze_tracking_system\system
-   ```
-3. Run the automated setup:
-   ```batch
-   setup.bat
-   ```
+## Quick Installation
 
-### For All Platforms (Alternative)
-1. Open terminal/command prompt
-2. Navigate to the `system/` directory:
-   ```bash
-   cd path/to/gaze_tracking_system/system
-   ```
-3. Run the Python setup script:
-   ```bash
-   python setup.py
-   ```
+### Automated Setup (Recommended)
 
----
+Navigate to the system directory:
+cd path/to/gaze_tracking_system/system
 
-## 📋 System Requirements
+**Windows:**
+setup.bat
 
-### Minimum Requirements
-- **Python**: 3.8 or higher
-- **Operating System**: Windows 10+, macOS 10.15+, or Linux Ubuntu 20.04+
-- **RAM**: 8GB minimum, 16GB recommended
-- **Storage**: 2GB free space
-- **Camera**: USB webcam or built-in camera (720p or higher recommended)
+**All Platforms**
+python setup.py 
 
-### Python Version Check
-```bash
-python --version
-```
-Should return Python 3.8.x or higher.
 
----
+The automated setup will install all dependencies, create necessary directories, and verify system compatibility.
 
-## 🛠 Manual Installation
+### Verification
 
-If the automated setup doesn't work, follow these manual steps:
+Test installation success:
 
-### Step 1: Install Python Dependencies
-```bash
-# Upgrade pip first
+python -c "import cv2, mediapipe, numpy, pandas, sklearn, bidi.algorithm, arabic_reshaper, tkinter; print('Installation successful')"
+
+
+## Manual Installation
+
+If automated setup fails, install dependencies manually:
+
+*Upgrade pip*
 python -m pip install --upgrade pip
 
-# Install all requirements
+*Install core dependencies*
+pip install opencv-python>=4.8.0 mediapipe>=0.10.0
+pip install numpy>=1.24.0 pandas>=2.0.0 scikit-learn>=1.3.0
+pip install scipy>=1.10.0 joblib>=1.3.0
+
+*Install GUI and text processing*
+pip install pillow>=10.0.0 python-bidi>=0.4.2 arabic-reshaper>=3.0.0
+
+*Install from requirements file*
 pip install -r requirements.txt
-```
 
-### Step 2: Verify Critical Packages
-Test that key packages are working:
 
-```python
-# Test in Python console
-import cv2
-import mediapipe as mp
-import numpy as np
-import pandas as pd
-import sklearn
-from PIL import Image
-import bidi.algorithm
-import arabic_reshaper
-import tkinter
-```
+## Dependency Overview
 
-### Step 3: Create Project Directories
-The system needs these directories (created automatically by setup scripts):
-- `calibration_data/`
-- `eye_tracking_data/`
-- `models/`
-- `movement_data/`
-- `user_data/`
+**Core Computer Vision:**
+- opencv-python: Camera access and image processing
+- mediapipe: Facial landmark detection and tracking
 
----
+**Machine Learning:**
+- scikit-learn: RandomForest model training and prediction
+- numpy: Numerical computing and array operations
+- pandas: Data manipulation and CSV handling
+- scipy: Scientific computing and statistical functions
 
-## 📦 Package Details
+**Text Processing:**
+- pillow: Image rendering and font handling
+- python-bidi: Bidirectional text algorithm for RTL support
+- arabic-reshaper: Hebrew text character reshaping
 
-### Core Dependencies
-| Package | Purpose | Minimum Version |
-|---------|---------|----------------|
-| opencv-python | Computer vision and camera access | 4.8.0 |
-| mediapipe | Face and landmark detection | 0.10.0 |
-| numpy | Numerical computing | 1.24.0 |
-| pandas | Data manipulation | 2.0.0 |
-| scikit-learn | Machine learning models | 1.3.0 |
-| scipy | Scientific computing | 1.10.0 |
-| joblib | Model serialization | 1.3.0 |
+**GUI Framework:**
+- tkinter: User interface (typically built-in with Python)
 
-### GUI and Text Processing
-| Package | Purpose | Minimum Version |
-|---------|---------|----------------|
-| tkinter | GUI framework (usually built-in) | Built-in |
-| Pillow (PIL) | Image processing | 10.0.0 |
-| python-bidi | Hebrew/Arabic text processing | 0.4.2 |
-| arabic-reshaper | RTL text reshaping | 3.0.0 |
-
-### Optional Packages
-| Package | Purpose | Minimum Version |
-|---------|---------|----------------|
-| matplotlib | Data visualization | 3.7.0 |
-| seaborn | Statistical plotting | 0.12.0 |
-| pytest | Unit testing | 7.0.0 |
-
----
-
-## 🏃‍♂️ Running the System
+## Running the System
 
 ### GUI Mode (Recommended)
-```bash
 cd system/
 python gui.py
-```
 
-### Command Line Mode
-```bash
-cd system/
-python main.py
-```
 
----
+## Directory Structure
 
-## 🔧 Troubleshooting
+After setup, the following structure is created:
+gaze_tracking_system/
+├── system/ # Core system files
+├── calibration_data/ # System-level calibration storage
+├── eye_tracking_data/ # Session data directory
+├── models/ # System-level model storage
+└── user_sessions/ # User-specific session directories
+└── username_timestamp/ # Individual session folders
+├── calibration/ # Session calibration data
+├── models/ # Session-specific models
+└── analysis/ # Session analysis output
 
-### Common Issues and Solutions
 
-#### 1. "Python is not recognized"
-**Problem**: Python not in system PATH
-**Solution**:
-- Windows: Reinstall Python with "Add Python to PATH" checked
-- macOS/Linux: Add Python to PATH in shell profile
+## Troubleshooting
 
-#### 2. "No module named 'cv2'"
-**Problem**: OpenCV not installed properly
-**Solution**:
-```bash
-pip uninstall opencv-python
-pip install opencv-python
-```
+### Common Issues
 
-#### 3. "ModuleNotFoundError: No module named 'mediapipe'"
-**Problem**: MediaPipe installation failed
-**Solution**:
-```bash
-pip install --upgrade pip
-pip install mediapipe --no-cache-dir
-```
+**Python Not Found**
+- Windows: Reinstall Python with "Add to PATH" option
+- macOS/Linux: Add Python to shell profile PATH
 
-#### 4. Camera Access Issues
-**Problem**: Camera not detected or permission denied
-**Solution**:
-- Windows: Check camera privacy settings
-- macOS: Allow camera access in System Preferences
+**Camera Access Denied**
+- Windows: Check privacy settings for camera access
+- macOS: Allow camera access in System Preferences > Security & Privacy
 - Linux: Add user to video group: `sudo usermod -a -G video $USER`
 
-#### 5. Hebrew Text Not Displaying Properly
-**Problem**: RTL text processing packages missing
-**Solution**:
-```bash
-pip install python-bidi arabic-reshaper
-```
+**Package Installation Failures**
+- Run as Administrator/sudo if permission errors occur
+- Upgrade pip: `python -m pip install --upgrade pip`
+- Use `--no-cache-dir` flag for problematic packages
 
-#### 6. "tkinter module not found"
-**Problem**: GUI framework not available
-**Solution**:
-- Windows: Reinstall Python with tkinter
+**MediaPipe Installation Issues**
+- Windows: Install Visual C++ Redistributable
+- macOS: Install Xcode Command Line Tools: `xcode-select --install`
+- Linux: Install system dependencies: `sudo apt-get install python3-dev libgl1-mesa-glx`
+
+**Hebrew Text Not Displaying**
+- Verify python-bidi and arabic-reshaper installation
+- Check system has Hebrew fonts available
+- Test Hebrew processing independently
+
+**GUI Framework Missing**
+- Windows: Reinstall Python with tkinter included
 - Ubuntu: `sudo apt-get install python3-tk`
-- macOS: Usually included with Python
+- CentOS/RHEL: `sudo yum install python3-tkinter`
 
 ### Advanced Troubleshooting
 
-#### Clean Installation
-If you encounter persistent issues:
-```bash
-# Remove all packages
-pip freeze | grep -v "^-e" | xargs pip uninstall -y
+**Clean Installation:**
 
-# Reinstall from requirements
+Remove existing packages
+pip freeze | xargs pip uninstall -y
+
+Reinstall from requirements
 pip install -r requirements.txt
-```
 
-#### Virtual Environment Setup
-For isolated installation:
-```bash
-# Create virtual environment
+Create isolated environment
 python -m venv gaze_env
 
-# Activate (Windows)
-gaze_env\Scripts\activate
-
-# Activate (macOS/Linux)  
-source gaze_env/bin/activate
-
-# Install packages
+Activate environment
+Windows: gaze_env\Scripts\activate
+macOS/Linux: source gaze_env/bin/activate
+Install packages
 pip install -r requirements.txt
-```
 
-#### Check System Capabilities
-Test your system:
-```python
-# Test camera access
+
+**System Capability Test:**
+Test camera
 import cv2
 cap = cv2.VideoCapture(0)
 print(f"Camera available: {cap.isOpened()}")
 cap.release()
 
-# Test MediaPipe
+Test MediaPipe
 import mediapipe as mp
 mp_face_mesh = mp.solutions.face_mesh
-print("MediaPipe face mesh loaded successfully")
+print("MediaPipe loaded successfully")
 
-# Test Hebrew processing
+Test Hebrew processing
 from bidi.algorithm import get_display
 import arabic_reshaper
-text = "שלום עולם"
-reshaped = arabic_reshaper.reshape(text)
-display_text = get_display(reshaped) 
-print("Hebrew text processing working")
-```
+text = arabic_reshaper.reshape("שלום עולם")
+display_text = get_display(text)
+print("Hebrew processing working")
 
----
 
-## 🌐 Platform-Specific Notes
+## Platform-Specific Notes
 
-### Windows
+**Windows:**
 - Use PowerShell or Command Prompt as Administrator
-- Ensure camera drivers are installed
-- Windows Defender may flag camera access
+- Ensure camera drivers are installed and updated
+- Windows Defender may prompt for camera access permission
 
-### macOS
-- Install Xcode Command Line Tools: `xcode-select --install`
-- Grant camera permissions when prompted
-- May need to install Homebrew for some dependencies
+**macOS:**
+- May require Xcode Command Line Tools for compilation
+- Grant camera permissions when system prompts
+- Some packages may require Homebrew for dependencies
 
-### Linux (Ubuntu/Debian)
-Install system dependencies:
-```bash
-sudo apt-get update
-sudo apt-get install python3-dev python3-pip python3-tk
-sudo apt-get install libgl1-mesa-glx libglib2.0-0
-```
 
-### Linux (CentOS/RHEL)
-```bash
-sudo yum install python3-devel python3-pip python3-tkinter
-sudo yum install mesa-libGL glib2
-```
+## Performance Optimization
 
----
+**System Performance:**
+- Close unnecessary applications during tracking sessions
+- Ensure adequate lighting for camera detection
+- Use wired camera connection when possible for stability
 
-## 📁 Directory Structure
+**Memory Management:**
+- Monitor RAM usage during long sessions
+- Restart application between extended analysis sessions
+- Clear session data periodically if storage is limited
 
-After successful setup, your directory should look like:
-```
-gaze_tracking_system/
-├── system/
-│   ├── gui.py              # Main GUI application
-│   ├── main.py             # Command line interface
-│   ├── requirements.txt    # Package dependencies
-│   ├── setup.py           # Cross-platform setup
-│   ├── setup.bat          # Windows setup script
-│   ├── SETUP_README.md    # This file
-│   └── [other system files]
-├── calibration_data/       # Calibration files
-├── eye_tracking_data/      # Session data
-├── models/                 # Trained ML models
-├── movement_data/          # Movement analysis
-└── user_data/             # User session directories
-```
+## Maintenance
 
----
-
-## 🆘 Getting Help
-
-If you continue to have issues:
-
-1. **Check System Requirements**: Ensure your system meets minimum requirements
-2. **Update Python**: Make sure you're using Python 3.8+
-3. **Try Virtual Environment**: Create a clean environment
-4. **Check Error Messages**: Read error messages carefully
-5. **System Logs**: Check system logs for camera/permission issues
-
-### Contact Information
-- Create an issue in the repository
-- Include error messages and system information
-- Specify your operating system and Python version
-
----
-
-## ✅ Verification Checklist
-
-After setup, verify these work:
-- [ ] Python 3.8+ installed and in PATH
-- [ ] All packages from requirements.txt installed
-- [ ] Camera access works
-- [ ] GUI launches without errors: `python gui.py`
-- [ ] Hebrew text renders properly
-- [ ] Directory structure created
-
----
-
-## 🔄 Updates and Maintenance
-
-### Updating Dependencies
-```bash
-# Update all packages to latest versions
+**Dependency Updates:**
+Update all packages
 pip install --upgrade -r requirements.txt
 
-# Update specific package
-pip install --upgrade opencv-python
-```
+Update specific packages
+pip install --upgrade opencv-python mediapipe
 
-### System Compatibility
-The system has been tested on:
-- Windows 10/11
-- macOS Big Sur and later
-- Ubuntu 20.04 LTS and later
+**System Validation:**
+Periodically verify system functionality with the verification test above, especially after system updates or hardware changes.
 
----
+## Support
 
-## 📝 License and Credits
-
-This gaze tracking system includes Hebrew RTL support and advanced eye movement analysis capabilities. See the main README for full feature documentation.
+For additional assistance:
+- Ensure error messages are captured for troubleshooting
+- Note operating system version and Python version
+- Test camera functionality independently of the application
+- Verify all dependencies are correctly installed before reporting issues
