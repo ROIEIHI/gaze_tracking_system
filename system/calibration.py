@@ -692,19 +692,6 @@ class GazeCalibrator:
         # Phase 2.4: Save Data
         filepath = self.save_calibration_data()
         
-        # Show completion message
-        completion_frame = np.zeros((SCREEN_HEIGHT, SCREEN_WIDTH, 3), dtype=np.uint8)
-        cv2.putText(completion_frame, MESSAGES['calibration_complete'], 
-                   (SCREEN_WIDTH//2 - 300, SCREEN_HEIGHT//2), cv2.FONT_HERSHEY_SIMPLEX, 1.5, GREEN, 3)
-        cv2.putText(completion_frame, f"Data saved: {os.path.basename(filepath)}", 
-                   (SCREEN_WIDTH//2 - 200, SCREEN_HEIGHT//2 + 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2)
-        cv2.putText(completion_frame, "Press any key to continue", 
-                   (SCREEN_WIDTH//2 - 150, SCREEN_HEIGHT//2 + 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2)
-        
-        cv2.imshow('Calibration Complete', completion_frame)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-        
         return filepath
     
     def __del__(self):

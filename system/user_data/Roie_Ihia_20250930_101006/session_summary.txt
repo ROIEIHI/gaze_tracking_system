@@ -1,0 +1,12 @@
+GAZE TRACKING SESSION SUMMARY
+==================================================
+
+Participant: Roie_Ihia
+Session Time: 2025-09-30 10:13:44
+Calibration File: calibration_data_20250930_101117.csv
+Model File: gaze_model.pkl
+Reading Mode: Hebrew RTL
+Screen Resolution: 1080×720
+Text Font Size: 30
+
+Session completed successfully!

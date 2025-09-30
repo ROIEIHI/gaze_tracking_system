@@ -730,7 +730,7 @@ class TextReadingGazePredictor:
         current_blink = self._detect_blink(face_landmarks)
         blink_frequency = self._update_blink_frequency(current_blink)
 
-        return prediction, blink_frequency, pupil_size
+        return prediction, pupil_size, blink_frequency
 
     def _calculate_head_pose(self, landmarks, frame_shape):
         """Calculate head pose using PnP algorithm"""
@@ -878,28 +878,41 @@ class TextReadingGazePredictor:
     def _detect_blink(self, landmarks):
         """Detect blink based on eye aspect ratio"""
         try:
-            # Eye landmarks for blink detection
-            left_eye_landmarks = [33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246]
-            right_eye_landmarks = [362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398]
+            # MediaPipe face mesh eye landmarks for EAR calculation
+            # Left eye: Use specific landmarks for accurate EAR
+            left_eye_horizontal = [33, 133]  # Left and right corners
+            left_eye_vertical_1 = [160, 144]  # Top and bottom vertical pair 1
+            left_eye_vertical_2 = [159, 145]  # Top and bottom vertical pair 2
             
-            def eye_aspect_ratio(eye_landmarks):
-                # Get vertical distances
-                A = np.linalg.norm(np.array([landmarks.landmark[eye_landmarks[1]].x, landmarks.landmark[eye_landmarks[1]].y]) - 
-                                np.array([landmarks.landmark[eye_landmarks[5]].x, landmarks.landmark[eye_landmarks[5]].y]))
-                B = np.linalg.norm(np.array([landmarks.landmark[eye_landmarks[2]].x, landmarks.landmark[eye_landmarks[2]].y]) - 
-                                np.array([landmarks.landmark[eye_landmarks[4]].x, landmarks.landmark[eye_landmarks[4]].y]))
-                # Get horizontal distance
-                C = np.linalg.norm(np.array([landmarks.landmark[eye_landmarks[0]].x, landmarks.landmark[eye_landmarks[0]].y]) - 
-                                np.array([landmarks.landmark[eye_landmarks[3]].x, landmarks.landmark[eye_landmarks[3]].y]))
+            # Right eye: Use specific landmarks for accurate EAR  
+            right_eye_horizontal = [362, 263]  # Left and right corners
+            right_eye_vertical_1 = [387, 373]  # Top and bottom vertical pair 1
+            right_eye_vertical_2 = [386, 374]  # Top and bottom vertical pair 2
+            
+            def calculate_distance(p1_idx, p2_idx):
+                """Calculate Euclidean distance between two landmark points"""
+                p1 = landmarks.landmark[p1_idx]
+                p2 = landmarks.landmark[p2_idx]
+                return np.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
+            
+            def eye_aspect_ratio(horizontal, vertical_1, vertical_2):
+                """Calculate EAR using correct MediaPipe landmarks"""
+                # Two vertical distances
+                A = calculate_distance(vertical_1[0], vertical_1[1])
+                B = calculate_distance(vertical_2[0], vertical_2[1])
+                # One horizontal distance
+                C = calculate_distance(horizontal[0], horizontal[1])
+                
+                # EAR formula: (A + B) / (2.0 * C)
                 return (A + B) / (2.0 * C)
             
             # Calculate EAR for both eyes
-            left_ear = eye_aspect_ratio(left_eye_landmarks[:6])  # Use first 6 points for calculation
-            right_ear = eye_aspect_ratio(right_eye_landmarks[:6])
+            left_ear = eye_aspect_ratio(left_eye_horizontal, left_eye_vertical_1, left_eye_vertical_2)
+            right_ear = eye_aspect_ratio(right_eye_horizontal, right_eye_vertical_1, right_eye_vertical_2)
             avg_ear = (left_ear + right_ear) / 2.0
             
-            # Blink threshold (lower = more closed)
-            blink_threshold = 0.21
+            # Blink threshold - typical EAR values: open eyes ~0.3, closed eyes ~0.1
+            blink_threshold = 0.25  # Standard threshold for blink detection
             return 1.0 if avg_ear < blink_threshold else 0.0
             
         except Exception as e:

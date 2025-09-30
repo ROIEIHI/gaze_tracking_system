@@ -188,7 +188,7 @@ class GazeModelTrainer:
         screen_diagonal = np.sqrt(SCREEN_WIDTH**2 + SCREEN_HEIGHT**2)
         percentage_error = (euclidean_rmse / screen_diagonal) * 100
         
-        # Cross-validation score - USE THE SAME SCORER AS GRID SEARCH
+        # Cross-validation score 
         def euclidean_distance_scorer(estimator, X, y):
             y_pred = estimator.predict(X)
             euclidean_distances = np.sqrt(np.sum((y - y_pred)**2, axis=1))
@@ -196,7 +196,7 @@ class GazeModelTrainer:
         
         cv_scores = cross_val_score(
             self.model, self.X_train, self.y_train,
-            cv=CV_FOLDS, scoring=euclidean_distance_scorer  # CHANGED THIS LINE
+            cv=CV_FOLDS, scoring=euclidean_distance_scorer  
         )
         
         # Store results
@@ -208,7 +208,7 @@ class GazeModelTrainer:
             'r2_y': r2_y,
             'rmse_x': rmse_x,
             'rmse_y': rmse_y,
-            'cv_score_mean': cv_scores.mean(),
+            'cv_score_mean': np.abs(cv_scores.mean()),
             'cv_score_std': cv_scores.std(),
             'train_samples': len(self.X_train),
             'test_samples': len(self.X_test)

@@ -44,7 +44,7 @@ FACE_TRACKING_CONFIDENCE = 0.9     # Tracking confidence
 # Calibration Process
 BASELINE_FRAMES = 30  # frames for pitch/yaw baseline calculation
 CALIBRATION_FRAMES = 15  # frames per calibration point
-CALIBRATION_GRID_SIZE = 0  # 4x4 grid = 16 points
+CALIBRATION_GRID_SIZE = 5  # 5x5 grid = 25 points
 CALIBRATION_POINT_SIZE = 20  # radius of calibration points
 CALIBRATION_MARGIN_X = 150  # pixels from screen edges
 CALIBRATION_MARGIN_Y = 200  # pixels from screen edges
@@ -167,17 +167,17 @@ ZSCORE_THRESHOLD = 3.0
 # EYE ANALYSIS AND READING SETTINGS
 # ============================================================================
 # Text Display Control
-TEXT_ROWS_PER_PAGE = 3              # Number of text rows per page
-TEXT_WORDS_PER_ROW = 10            # Maximum words per row (used in automatic calculation)
+TEXT_ROWS_PER_PAGE = 4             # Number of text rows per page
+TEXT_WORDS_PER_ROW = 11            # Maximum words per row (used in automatic calculation)
 TEXT_FORCE_WORDS_PER_ROW = None        # Set to a number (e.g., 5) to force exact words per row, None for automatic
 TEXT_FONT = "arial"                 # Font type (arial, times, calibri, etc.)
 TEXT_FONT_SIZE = 30                 # Font size in points
 TEXT_FONT_BOLD = True               # Bold text (True/False)
 TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
 TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
-TEXT_LINE_SPACING = 150              # Spacing between lines in pixels
+TEXT_LINE_SPACING = 75              # Spacing between lines in pixels
 TEXT_MARGIN_X = 0.10                # Horizontal margin (10% from edges)
-TEXT_MARGIN_Y = 0.20                # Vertical margin (25% from edges)
+TEXT_MARGIN_Y = 0.35                # Vertical margin (35% from edges)
 
 # Reading Text Content (100+ words - easily customizable)
 READING_TEXT =  """
@@ -187,6 +187,20 @@ READING_TEXT =  """
 תוך הגברת המצב רוח וההערכה העצמית. מחקרים מדעיים הוכיחו כי אנשים שמתרגלים באופן קבוע
 בעלי תפקוד קוגניטיבי טוב יותר, זיכרון משופר ויצירתיות מוגברת. פעילות גופנית מגרה
 שחרור של אנדורפינים, שהם מעלי מצב רוח טבעיים היוצרים תחושות של אושר ורווחה.
+בנוסף, פעילות גופנית תורמת לשינה טובה יותר, מגבירה את רמות האנרגיה ומחזקת את מערכת החיסון.
+יתרונות נוספים כוללים שיפור במערכת החיסון, הפחתת סיכון למחלות כרוניות כמו סוכרת סוג 2,
+שבץ מוחי וסוגים מסוימים של סרטן, ושיפור בבריאות המוח עם הגיל. מעבר לכך, פעילות גופנית
+מסייעת בבניית קשרים חברתיים כאשר היא מתבצעת בקבוצות או מועדונים, מה שתורם לתחושת שייכות ותמיכה. פעילות גופנית היא השקעה חשובה בבריאות הכללית ובאיכות החיים, ומומלצת לכל הגילאים ולכל רמות הכושר.
+היתרונות של פעילות גופנית מתרחבים הרבה מעבר לכושר גופני בלבד. פעילות גופנית סדירה
+משפרת את בריאות הלב וכלי הדם, מחזקת שרירים ועצמות, ועוזרת לשמור על משקל בריא.
+פעילות גופנית גם ממלאת תפקיד חשוב בבריאות הנפש על ידי הפחתת לחץ, חרדה ודיכאון,
+תוך הגברת המצב רוח וההערכה העצמית. מחקרים מדעיים הוכיחו כי אנשים שמתרגלים באופן קבוע
+בעלי תפקוד קוגניטיבי טוב יותר, זיכרון משופר ויצירתיות מוגברת. פעילות גופנית מגרה
+שחרור של אנדורפינים, שהם מעלי מצב רוח טבעיים היוצרים תחושות של אושר ורווחה.
+בנוסף, פעילות גופנית תורמת לשינה טובה יותר, מגבירה את רמות האנרגיה ומחזקת את מערכת החיסון.
+יתרונות נוספים כוללים שיפור במערכת החיסון, הפחתת סיכון למחלות כרוניות כמו סוכרת סוג 2,
+שבץ מוחי וסוגים מסוימים של סרטן, ושיפור בבריאות המוח עם הגיל. מעבר לכך, פעילות גופנית
+מסייעת בבניית קשרים חברתיים כאשר היא מתבצעת בקבוצות או מועדונים, מה שתורם לתחושת שייכות ותמיכה. פעילות גופנית היא השקעה חשובה בבריאות הכללית ובאיכות החיים, ומומלצת לכל הגילאים ולכל רמות הכושר.
 """
 
 # Eye Movement Analysis Settings
