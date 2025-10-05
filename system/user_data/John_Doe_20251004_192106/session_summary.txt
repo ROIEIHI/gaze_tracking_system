@@ -1,0 +1,12 @@
+GAZE TRACKING SESSION SUMMARY
+==================================================
+
+Participant: John_Doe
+Session Time: 2025-10-04 19:25:54
+Calibration File: calibration_data_20251004_192221.csv
+Model File: gaze_model.pkl
+Reading Mode: Hebrew RTL
+Screen Resolution: 1080×720
+Text Font Size: 30
+
+Session completed successfully!

@@ -86,13 +86,13 @@ class GazeModelTrainer:
         self.df['avg_iris_y'] = (self.df['norm_L_y'] + self.df['norm_R_y']) / 2
         
         # Create interaction terms
-        self.df['yaw_avg_x_inter'] = self.df['yaw'] * self.df['avg_iris_x']
-        self.df['pitch_avg_y_inter'] = self.df['pitch'] * self.df['avg_iris_y']
-        
-        # Update feature columns to include new engineered features
-        engineered_features = FEATURE_COLUMNS + ['yaw_avg_x_inter', 'pitch_avg_y_inter']
+        self.df['tvect_avg_x_inter'] = self.df['tvect_x'] * self.df['avg_iris_x']
+        self.df['tvect_avg_y_inter'] = self.df['tvect_y'] * self.df['avg_iris_y']
 
-        print(f"Added engineered features: ['yaw_avg_x_inter', 'pitch_avg_y_inter']")
+        # Update feature columns to include new engineered features
+        engineered_features = FEATURE_COLUMNS + ['tvect_avg_x_inter', 'tvect_avg_y_inter']
+
+        print(f"Added engineered features: ['tvect_avg_x_inter', 'tvect_avg_y_inter']")
         print(f"Total features: {len(engineered_features)}")
         
         return self.df, engineered_features

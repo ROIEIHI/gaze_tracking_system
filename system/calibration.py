@@ -39,7 +39,7 @@ class GazeCalibrator:
         self.calibration_data = []
         self.baseline_pitch = 0.0
         self.baseline_yaw = 0.0
-        self.baseline_roll = 0.0
+        #self.baseline_roll = 0.0
         
         # Face stability tracking
         self.face_stable_start = None
@@ -220,7 +220,7 @@ class GazeCalibrator:
                 image_points.append([landmark.x * w, landmark.y * h])
         
         if len(image_points) != len(PNP_3D_MODEL_POINTS):
-            return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
+            return {'pitch': 0.0, 'yaw': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
         
         image_points = np.array(image_points, dtype=np.float64)
         model_points = np.array(PNP_3D_MODEL_POINTS, dtype=np.float64)
@@ -242,7 +242,7 @@ class GazeCalibrator:
             )
             
             if not success:
-                return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
+                return {'pitch': 0.0, 'yaw': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
             
             # Convert rotation vector to Euler angles
             rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
@@ -254,17 +254,16 @@ class GazeCalibrator:
             if not singular:
                 yaw = np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0])
                 pitch = np.arctan2(-rotation_matrix[2,0], sy)
-                roll = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2])
+                #roll = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2])
             else:
                 yaw = np.arctan2(-rotation_matrix[1,2], rotation_matrix[1,1])
                 pitch = np.arctan2(-rotation_matrix[2,0], sy)
-                roll = 0
+                #roll = 0
             
             # Convert to degrees
             return {
                 'pitch': np.degrees(pitch),
                 'yaw': np.degrees(yaw),
-                'roll': np.degrees(roll),
                 'tvect_x': translation_vector[0][0],
                 'tvect_y': translation_vector[1][0],
                 'tvect_z': translation_vector[2][0]
@@ -272,7 +271,7 @@ class GazeCalibrator:
             
         except Exception as e:
             print(f"PnP calculation error: {e}")
-            return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
+            return {'pitch': 0.0, 'yaw': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
     
     def _extract_features(self, landmarks, frame_shape: Tuple[int, int]) -> Dict[str, float]:
         """Extract all features for one frame"""
@@ -510,9 +509,9 @@ class GazeCalibrator:
                     # Calculate baseline averages
                     self.baseline_pitch = np.mean([f['pitch'] for f in baseline_data])
                     self.baseline_yaw = np.mean([f['yaw'] for f in baseline_data])
-                    self.baseline_roll = np.mean([f['roll'] for f in baseline_data])
+                    #self.baseline_roll = np.mean([f['roll'] for f in baseline_data])
                     
-                    print(f"Baseline calculated: pitch={self.baseline_pitch:.2f}, yaw={self.baseline_yaw:.2f}, roll={self.baseline_roll:.2f}")
+                    print(f"Baseline calculated: pitch={self.baseline_pitch:.2f}, yaw={self.baseline_yaw:.2f}")
                     cv2.destroyAllWindows()
                     return True
             

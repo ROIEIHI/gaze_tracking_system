@@ -744,7 +744,7 @@ class TextReadingGazePredictor:
                 image_points.append([landmark.x * w, landmark.y * h])
         
         if len(image_points) != len(PNP_3D_MODEL_POINTS):
-            return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
+            return {'pitch': 0.0, 'yaw': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
         
         image_points = np.array(image_points, dtype=np.float64)
         model_points = np.array(PNP_3D_MODEL_POINTS, dtype=np.float64)
@@ -766,7 +766,7 @@ class TextReadingGazePredictor:
             )
             
             if not success:
-                return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
+                return {'pitch': 0.0, 'yaw': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
             
             # Convert to Euler angles
             rotation_matrix, _ = cv2.Rodrigues(rotation_vector)
@@ -776,23 +776,22 @@ class TextReadingGazePredictor:
             if not singular:
                 yaw = np.arctan2(rotation_matrix[1,0], rotation_matrix[0,0])
                 pitch = np.arctan2(-rotation_matrix[2,0], sy)
-                roll = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2])
+                #roll = np.arctan2(rotation_matrix[2,1], rotation_matrix[2,2])
             else:
                 yaw = np.arctan2(-rotation_matrix[1,2], rotation_matrix[1,1])
                 pitch = np.arctan2(-rotation_matrix[2,0], sy)
-                roll = 0
+                #roll = 0
             
             return {
                 'pitch': np.degrees(pitch),
                 'yaw': np.degrees(yaw),
-                'roll': np.degrees(roll),
                 'tvect_x': translation_vector[0][0],
                 'tvect_y': translation_vector[1][0],
                 'tvect_z': translation_vector[2][0]
             }
             
         except Exception as e:
-            return {'pitch': 0.0, 'yaw': 0.0, 'roll': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
+            return {'pitch': 0.0, 'yaw': 0.0, 'tvect_x': 0.0, 'tvect_y': 0.0, 'tvect_z': 0.0}
     
     def _extract_features(self, landmarks, frame_shape):
         """Extract features from face landmarks using your calibration logic"""
@@ -833,7 +832,7 @@ class TextReadingGazePredictor:
         
         # Return features in correct order
         return [norm_L_x, norm_L_y, norm_R_x, norm_R_y, 
-                pose['pitch'], pose['yaw'], pose['roll'],
+                pose['pitch'], pose['yaw'],
                 pose['tvect_x'], pose['tvect_y'], pose['tvect_z']]
     
     def _calculate_pupil_size(self, landmarks, frame_shape):
@@ -952,18 +951,17 @@ class TextReadingGazePredictor:
         """Predict gaze point from features using trained model"""
         try:
             # Convert to pandas DataFrame for feature engineering (same as training)
-            feature_names = ['norm_L_x', 'norm_L_y', 'norm_R_x', 'norm_R_y', 
-                            'pitch', 'yaw', 'roll', 'tvect_x', 'tvect_y', 'tvect_z']
+            feature_names = FEATURE_COLUMNS
             df_features = pd.DataFrame([features], columns=feature_names)
             
             # Apply SAME feature engineering as training
             df_features['avg_iris_x'] = (df_features['norm_L_x'] + df_features['norm_R_x']) / 2
             df_features['avg_iris_y'] = (df_features['norm_L_y'] + df_features['norm_R_y']) / 2
-            df_features['yaw_avg_x_inter'] = df_features['yaw'] * df_features['avg_iris_x']
-            df_features['pitch_avg_y_inter'] = df_features['pitch'] * df_features['avg_iris_y']
+            df_features['tvect_avg_x_inter'] = df_features['tvect_x'] * df_features['avg_iris_x']
+            df_features['tvect_avg_y_inter'] = df_features['tvect_y'] * df_features['avg_iris_y']
             
             # Use same feature order as training
-            engineered_features = FEATURE_COLUMNS + ['yaw_avg_x_inter', 'pitch_avg_y_inter']
+            engineered_features = FEATURE_COLUMNS + ['tvect_avg_x_inter', 'tvect_avg_y_inter']
             X = df_features[engineered_features].values
             
             # Scale features if scaler exists
