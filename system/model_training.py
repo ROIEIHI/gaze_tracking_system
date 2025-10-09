@@ -10,6 +10,7 @@ import os
 from datetime import datetime
 from typing import Tuple, Dict
 from sklearn.ensemble import RandomForestRegressor
+from xgboost import XGBRegressor
 from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_squared_error, r2_score
@@ -129,8 +130,8 @@ class GazeModelTrainer:
         return True
     
     def train_model(self) -> bool:
-        """Train RandomForest model with GridSearchCV"""
-        print("Training Multi-Output RandomForest model...")
+        """Train XGBoost model with GridSearchCV"""
+        print("Training Multi-Output XGBoost model...")
         print("Optimizing for Euclidean distance minimization...")
         
         # Custom scorer for Euclidean distance
@@ -140,12 +141,12 @@ class GazeModelTrainer:
             return -np.mean(euclidean_distances)  # Negative because GridSearchCV maximizes
         
         # Create base model
-        base_model = RandomForestRegressor(random_state=RANDOM_STATE)
+        base_model = XGBRegressor(random_state=RANDOM_STATE)
         
         # Grid search
         grid_search = GridSearchCV(
             base_model,
-            RANDOM_FOREST_PARAMS,
+            XGB_PARAMS,
             cv=CV_FOLDS,
             scoring=euclidean_distance_scorer,
             n_jobs=-1,
@@ -221,7 +222,7 @@ class GazeModelTrainer:
         results = self.training_results
         
         print("\n" + "="*80)
-        print("MULTI-OUTPUT RANDOM FOREST MODEL PERFORMANCE REPORT")
+        print("MULTI-OUTPUT XGBOOST MODEL PERFORMANCE REPORT")
         print("="*80)
         print(f"EUCLIDEAN DISTANCE ERROR: {results['euclidean_rmse']:.2f} pixels")
         print(f"PERCENTAGE ERROR: {results['percentage_error']:.2f}% (relative to {SCREEN_WIDTH}x{SCREEN_HEIGHT} diagonal)")

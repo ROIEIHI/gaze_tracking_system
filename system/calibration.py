@@ -327,12 +327,6 @@ class GazeCalibrator:
             face_box_color = GREEN if is_valid else RED
             cv2.rectangle(frame, (face_x_min, face_y_min), (face_x_max, face_y_max), face_box_color, 2)
 
-            # Add face box dimensions
-            face_width = face_x_max - face_x_min
-            face_height = face_y_max - face_y_min
-            dimensions_text = f"Face: {face_width}x{face_height}px"
-            cv2.putText(frame, dimensions_text, (face_x_min, face_y_max + 20), 
-            cv2.FONT_HERSHEY_SIMPLEX, 0.5, face_box_color, 1)
         
         # Draw status
         color = GREEN if is_valid else RED
@@ -348,6 +342,10 @@ class GazeCalibrator:
     def run_video_preview(self) -> bool:
         """Video preview with face detection"""
         print("Video Preview - Press SPACE when ready")
+
+        # Create named window and set it to stay on top
+        cv2.namedWindow('Gaze Tracker - Video Preview', cv2.WINDOW_AUTOSIZE)
+        cv2.setWindowProperty('Gaze Tracker - Video Preview', cv2.WND_PROP_TOPMOST, 1)
         
         while True:
             ret, frame = self.camera.read()
@@ -378,13 +376,13 @@ class GazeCalibrator:
             
             # Draw overlay
             self._draw_face_overlay(frame, landmarks, is_valid, error_msg)
-            
+
             # Instructions
             cv2.putText(frame, MESSAGES['press_space'], (10, frame.shape[0] - 50), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2)
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
             cv2.putText(frame, MESSAGES['press_esc'], (10, frame.shape[0] - 20), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, WHITE, 2)
-            
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.8, BLACK, 2)
+
             cv2.imshow('Gaze Tracker - Video Preview', frame)
             
             key = cv2.waitKey(1) & 0xFF
@@ -495,7 +493,7 @@ class GazeCalibrator:
             else:
                 progress_text = f"Collecting baseline data... {frames_collected}/{BASELINE_FRAMES}"
                 cv2.putText(calib_frame, progress_text, 
-                           (SCREEN_WIDTH//2 - 200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2)
+                           (SCREEN_WIDTH//2 - 200, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, BLACK, 2)
             
             cv2.imshow('Baseline Calibration', calib_frame)
             
@@ -585,14 +583,6 @@ class GazeCalibrator:
             
             if current_radius > 0:
                 cv2.circle(calib_frame, (target_x, target_y), current_radius, RED, -1)
-            
-            # Progress information
-            progress_text = f"Point {current_point_idx + 1}/{len(self.calibration_points)}"
-            cv2.putText(calib_frame, progress_text, (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2)
-            
-            if collecting:
-                frames_text = f"Collecting: {frames_collected}/{CALIBRATION_FRAMES}"
-                cv2.putText(calib_frame, frames_text, (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 1.0, WHITE, 2)
             
             cv2.imshow('Calibration', calib_frame)
             

@@ -48,15 +48,30 @@ class GazeTrackingGUI:
         
     def setup_main_window(self):
         """Configure main window properties"""
-        self.root.title("Gaze Tracking System - Professional Interface")
-        self.root.geometry("1200x800")
+        self.root.title("Gaze Tracking System - Main")
+        
+        # ADD FULLSCREEN CAPABILITY
+        self.is_fullscreen = True
+        
+        # Set initial window size and configure
         self.root.configure(bg='black')
         
-        # Center window
-        self.root.update_idletasks()
-        x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
-        y = (self.root.winfo_screenheight() // 2) - (800 // 2)
-        self.root.geometry(f"1200x800+{x}+{y}")
+        if self.is_fullscreen:
+            # Start in fullscreen mode
+            self.root.attributes('-fullscreen', True)
+            self.root.attributes('-topmost', True)
+        else:
+            # Start in windowed mode
+            self.root.geometry("1200x800")
+            # Center window
+            self.root.update_idletasks()
+            x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
+            y = (self.root.winfo_screenheight() // 2) - (800 // 2)
+            self.root.geometry(f"1200x800+{x}+{y}")
+        
+        # ADD FULLSCREEN TOGGLE KEYBINDINGS
+        self.root.bind('<F11>', self.toggle_fullscreen)
+        self.root.bind('<Escape>', self.exit_fullscreen)
         
     def setup_interface(self):
         """Create the main interface layout"""
@@ -70,17 +85,19 @@ class GazeTrackingGUI:
         
         title_label = ttk.Label(
             header_frame,
-            text="Advanced Gaze Tracking System",
+            text="Gaze Tracking and Reading Analysis Systqem",
             font=("Arial", 24, "bold")
         )
         title_label.pack()
         
-        subtitle_label = ttk.Label(
+        # ADD FULLSCREEN INSTRUCTIONS
+        instruction_label = ttk.Label(
             header_frame,
-            text="Hebrew/English Text Reading Analysis with Eye Movement Tracking",
-            font=("Arial", 12)
+            text="Press F11 for fullscreen mode | ESC to exit fullscreen",
+            font=("Arial", 10, "italic"),
+            foreground="gray"
         )
-        subtitle_label.pack()
+        instruction_label.pack(pady=(5, 0))
         
         # User input section
         self.setup_user_section(main_frame)
@@ -128,7 +145,7 @@ class GazeTrackingGUI:
         self.steps = [
             ("1. Face Detection & Calibration", "Collect gaze training data"),
             ("2. Model Training", "Build personalized ML model"),
-            ("3. Text Reading Analysis", "Real-time Hebrew/English reading tracking"),
+            ("3. Text Reading Analysis", "Real-time reading tracking"),
             ("4. Data Export", "Generate analysis reports")
         ]
         
@@ -186,7 +203,8 @@ class GazeTrackingGUI:
         status_frame.pack(fill="x", pady=(0, 10))
         
         # Status text
-        self.status_var = tk.StringVar(value="Ready to start...")
+        initial_status = "Ready to start... (Fullscreen mode active - Press F11 or ESC to toggle)"
+        self.status_var = tk.StringVar(value=initial_status)
         self.status_label = ttk.Label(
             status_frame,
             textvariable=self.status_var,
@@ -215,7 +233,7 @@ class GazeTrackingGUI:
         # Start button
         self.start_button = ttk.Button(
             button_frame,
-            text="Start Complete Workflow",
+            text="Start Session ▶",
             command=self.start_workflow,
             style="Accent.TButton"
         )
@@ -274,8 +292,21 @@ class GazeTrackingGUI:
         self.start_button.config(state="disabled")
         self.stop_button.config(state="normal")
         
+        # OPTIONAL: Auto-enter fullscreen for workflow
+        if not self.is_fullscreen:
+            auto_fullscreen = messagebox.askyesno(
+                "Fullscreen Mode", 
+                "Would you like to enter fullscreen mode for the session?\n\n"
+                "This provides a better experience for calibration and analysis."
+            )
+            if auto_fullscreen:
+                self.toggle_fullscreen()
+        
         # Create session directory
         self.create_session_directory()
+        
+        # Bring window to front
+        self.bring_to_front()
         
         # Run workflow in separate thread to prevent GUI freezing
         workflow_thread = threading.Thread(target=self.run_workflow, daemon=True)
@@ -335,7 +366,18 @@ class GazeTrackingGUI:
             
             # Complete
             self.update_status("Workflow completed successfully!", 4)
-            messagebox.showinfo("Success", "Gaze tracking analysis completed successfully!")
+            
+            # Optional: Exit fullscreen when done
+            if self.is_fullscreen:
+                exit_fullscreen = messagebox.askyesno(
+                    "Session Complete", 
+                    "Gaze tracking analysis completed successfully!\n\n"
+                    "Exit fullscreen mode?"
+                )
+                if exit_fullscreen:
+                    self.exit_fullscreen()
+            else:
+                messagebox.showinfo("Success", "Gaze tracking analysis completed successfully!")
             
         except Exception as e:
             self.update_status(f"Error: {str(e)}", None)
@@ -509,6 +551,48 @@ Current Configuration:
                 
         self.root.quit()
         self.root.destroy()
+        
+    def toggle_fullscreen(self, event=None):
+        """Toggle fullscreen mode"""
+        self.is_fullscreen = not self.is_fullscreen
+        
+        if self.is_fullscreen:
+            # Enter fullscreen
+            self.root.attributes('-fullscreen', True)
+            self.root.attributes('-topmost', True)
+            self.update_status("Entered fullscreen mode (Press F11 or ESC to exit)")
+        else:
+            # Exit fullscreen
+            self.root.attributes('-fullscreen', False)
+            self.root.attributes('-topmost', False)
+            self.root.geometry("1200x800")
+            # Re-center window
+            self.root.update_idletasks()
+            x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
+            y = (self.root.winfo_screenheight() // 2) - (800 // 2)
+            self.root.geometry(f"1200x800+{x}+{y}")
+            self.update_status("Exited fullscreen mode")
+
+    def exit_fullscreen(self, event=None):
+        """Exit fullscreen mode"""
+        if self.is_fullscreen:
+            self.is_fullscreen = False
+            self.root.attributes('-fullscreen', False)
+            self.root.attributes('-topmost', False)
+            self.root.geometry("1200x800")
+            # Re-center window
+            self.root.update_idletasks()
+            x = (self.root.winfo_screenwidth() // 2) - (1200 // 2)
+            y = (self.root.winfo_screenheight() // 2) - (800 // 2)
+            self.root.geometry(f"1200x800+{x}+{y}")
+            self.update_status("Exited fullscreen mode")
+
+    def bring_to_front(self):
+        """Bring window to front and focus"""
+        self.root.lift()
+        self.root.focus_force()
+        self.root.attributes('-topmost', True)
+        self.root.after_idle(lambda: self.root.attributes('-topmost', False))
         
     def run(self):
         """Start the GUI application"""

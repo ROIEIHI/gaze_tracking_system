@@ -113,6 +113,14 @@ RANDOM_FOREST_PARAMS = {
     'max_features': ['sqrt', 'log2']
 }
 
+XGB_PARAMS = {
+    'n_estimators': [300, 350, 400],
+    'max_depth': [2, 4, 8],
+    'learning_rate': [0.01, 0.05, 0.1],
+    'subsample': [0.7, 0.8, 1.0],
+    'colsample_bytree': [0.7, 0.8, 1.0]
+}
+
 # Cross-validation settings
 CV_FOLDS = 5
 
@@ -124,7 +132,7 @@ SCORING_METRIC = 'neg_mean_squared_error'
 
 # Colors (BGR format for OpenCV)
 RED = (0, 0, 255)
-GREEN = (0, 255, 0)
+GREEN = (100, 255, 100)
 BLUE = (255, 0, 0)
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)

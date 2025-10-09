@@ -116,6 +116,7 @@ def main():
             "numpy>=1.24.0",
             "pandas>=2.0.0",
             "scikit-learn>=1.3.0",
+            "xgboost>=1.7.0",
             "scipy>=1.10.0",
             "joblib>=1.3.0",
             "Pillow>=10.0.0",
@@ -142,6 +143,7 @@ def main():
         ("numpy", "numpy"), 
         ("pandas", "pandas"),
         ("scikit-learn", "sklearn"),
+        ("xgboost", "xgboost"),
         ("Pillow", "PIL"),
         ("python-bidi", "bidi"),
         ("arabic-reshaper", "arabic_reshaper")
