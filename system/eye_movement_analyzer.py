@@ -392,6 +392,58 @@ class EyeMovementAnalyzer:
         
         return summary
     
+    def show_analysis_summary_gui(self):
+        """Display analysis summary in a GUI popup window"""
+        try:
+            import tkinter as tk
+            from tkinter import messagebox
+            
+            # Get the analysis data
+            summary = self.get_analysis_summary()
+            
+            if "status" in summary:
+                messagebox.showinfo("Analysis", summary["status"])
+                return
+            
+            # Format the analysis for display
+            analysis_text = f"""READING ANALYSIS COMPLETE!
+
+Session Overview:
+• Duration: {summary['session_duration']:.2f} seconds
+• Total Fixations: {summary['total_fixations']}
+• Average Fixation Duration: {summary['average_fixation_duration']:.3f} seconds
+
+Reading Performance:
+• Reading Speed: {summary['reading_speed_wpm']:.1f} Words Per Minute
+• Average Eye Velocity: {summary['average_velocity']:.1f} pixels/second
+• Lines Read (estimated): {summary['lines_read_estimate']:.1f}
+• Fixation Rate: {summary['fixation_rate']:.2f} fixations/second
+
+Performance Assessment:
+"""
+            
+            # Add performance interpretation
+            if summary['reading_speed_wpm'] > 250:
+                analysis_text += "• Fast Reader - Above average reading speed\n"
+            elif summary['reading_speed_wpm'] > 200:
+                analysis_text += "• Good Reader - Average reading speed\n"
+            else:
+                analysis_text += "• Careful Reader - Taking time to process text\n"
+            
+            if summary['average_fixation_duration'] > 0.3:
+                analysis_text += "• Detailed Processing - Longer fixations indicate careful reading"
+            else:
+                analysis_text += "• Quick Processing - Shorter fixations indicate efficient reading"
+            
+            # Display in popup
+            messagebox.showinfo("Reading Analysis Results", analysis_text)
+            print("Analysis summary displayed successfully!")
+            
+        except ImportError:
+            print("GUI summary not available (tkinter not found)")
+        except Exception as e:
+            print(f"Error showing GUI summary: {e}")
+    
     def set_text_content(self, text_content: str, text_start_x: int, text_start_y: int, 
                         text_width: int, line_spacing: int = 35, font_scale: float = 0.6):
         """Set the current text content and calculate word positions for fixation mapping"""

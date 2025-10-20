@@ -85,7 +85,7 @@ class GazeTrackingGUI:
         
         title_label = ttk.Label(
             header_frame,
-            text="Gaze Tracking and Reading Analysis Systqem",
+            text="Gaze Tracking and Reading Analysis System",
             font=("Arial", 24, "bold")
         )
         title_label.pack()
@@ -367,25 +367,27 @@ class GazeTrackingGUI:
             # Complete
             self.update_status("Workflow completed successfully!", 4)
             
-            # Optional: Exit fullscreen when done
-            if self.is_fullscreen:
-                exit_fullscreen = messagebox.askyesno(
-                    "Session Complete", 
-                    "Gaze tracking analysis completed successfully!\n\n"
-                    "Exit fullscreen mode?"
-                )
-                if exit_fullscreen:
-                    self.exit_fullscreen()
-            else:
-                messagebox.showinfo("Success", "Gaze tracking analysis completed successfully!")
+            # Show completion message and exit
+            messagebox.showinfo(
+                "Session Complete", 
+                "Gaze tracking analysis completed successfully!\n\n"
+                "All data has been saved.\n"
+                "The application will now close."
+            )
+            
+            # Exit the application
+            self.exit_application()
             
         except Exception as e:
             self.update_status(f"Error: {str(e)}", None)
             messagebox.showerror("Workflow Error", f"An error occurred: {str(e)}")
         finally:
-            self.is_running = False
-            self.start_button.config(state="normal")
-            self.stop_button.config(state="disabled")
+            # Only reset UI state if the application is still running
+            # (i.e., user didn't choose to exit)
+            if hasattr(self, 'root') and self.root.winfo_exists():
+                self.is_running = False
+                self.start_button.config(state="normal")
+                self.stop_button.config(state="disabled")
             
     def run_calibration(self) -> bool:
         """Execute calibration step"""
@@ -456,6 +458,19 @@ class GazeTrackingGUI:
             self.predictor.run_text_reading_analysis()
             
             self.update_status("Text reading analysis completed")
+            
+            # Show analysis summary GUI
+            try:
+                if self.predictor and hasattr(self.predictor, 'movement_analyzer'):
+                    movement_analyzer = self.predictor.movement_analyzer
+                    if movement_analyzer and hasattr(movement_analyzer, 'show_analysis_summary_gui'):
+                        movement_analyzer.show_analysis_summary_gui()
+            except Exception as e:
+                print(f"Error showing analysis summary: {e}")
+                messagebox.showinfo("Analysis Complete", 
+                                  f"Reading analysis completed successfully!\n"
+                                  f"Data saved to: {analysis_dir}")
+            
             return True
             
         except Exception as e:
