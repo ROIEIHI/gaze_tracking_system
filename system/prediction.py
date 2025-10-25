@@ -1037,36 +1037,62 @@ class TextReadingGazePredictor:
         
         return nearest_word
     
+    def _is_hebrew_word(self, word: str) -> bool:
+        """Check if a word contains Hebrew characters"""
+        if not word or word == "Unknown":
+            return False
+        # Check if any character in the word is Hebrew
+        hebrew_chars = any('\u0590' <= char <= '\u05FF' for char in word)
+        return hebrew_chars
+    
+    def _clean_hebrew_word(self, word: str) -> str:
+        """Extract only Hebrew letters from a word, removing punctuation and other marks"""
+        if not word or word == "Unknown":
+            return word
+        
+        # Keep only Hebrew characters (Unicode range U+0590 to U+05FF)
+        cleaned_word = ''.join(char for char in word if '\u0590' <= char <= '\u05FF')
+        
+        # Return cleaned word if it has Hebrew characters, otherwise return "Unknown"
+        return cleaned_word if cleaned_word else "Unknown"
+    
     def _export_fixation_data(self) -> str:
         """Export fixation data in the same format as your CSV example"""
         if not self.fixation_data:
             print("No fixation data to export")
             return None
         
-        # Process fixation data to match your CSV format
+        # Process fixation data to match your CSV format with Hebrew filtering
         processed_fixations = []
         fixation_order = 1
         
-        # Group consecutive gaze points into fixations
+        # Group consecutive gaze points into fixations and filter for Hebrew words only
         current_fixation = None
         
         for data in self.fixation_data:
+            # Clean the word and check if it's Hebrew
+            cleaned_word = self._clean_hebrew_word(data['word'])
+            
+            # Skip non-Hebrew words completely
+            if not self._is_hebrew_word(cleaned_word) or cleaned_word == "Unknown":
+                continue
+            
             if current_fixation is None:
                 current_fixation = {
                     'start_time': data['timestamp'],
                     'end_time': data['timestamp'],
                     'x_positions': [data['x']],
                     'y_positions': [data['y']],
-                    'word': data['word'],
+                    'word': cleaned_word,  # Use cleaned word
                     'time_from_onset': data['time_from_onset'],
                     'pupil_size': data.get('pupil_size', 0),
                     'blink_frequency': data.get('blink_frequency', 0)
                 }
             else:
-                # Check if this continues the current fixation
+                # Check if this continues the current fixation (same cleaned word)
                 time_gap = data['timestamp'] - current_fixation['end_time']
                 
-                if time_gap < 0.1 and data['word'] == current_fixation['word']:  # Same fixation
+                if time_gap < 0.1 and cleaned_word == current_fixation['word']:  # Same fixation
                     current_fixation['end_time'] = data['timestamp']
                     current_fixation['x_positions'].append(data['x'])
                     current_fixation['y_positions'].append(data['y'])
@@ -1101,7 +1127,7 @@ class TextReadingGazePredictor:
                         'end_time': data['timestamp'],
                         'x_positions': [data['x']],
                         'y_positions': [data['y']],
-                        'word': data['word'],
+                        'word': cleaned_word,  # Use cleaned word
                         'time_from_onset': data['time_from_onset'],
                         'pupil_size': data.get('pupil_size', 0),
                         'blink_frequency': data.get('blink_frequency', 0)
@@ -1125,18 +1151,87 @@ class TextReadingGazePredictor:
                     'Blink_Frequency': round(avg_blink_frequency,2)
                 })
         
-        # Create DataFrame and export
+        # Create DataFrame and export with consecutive word grouping
         if processed_fixations:
-            df = pd.DataFrame(processed_fixations)
+            # Apply consecutive word grouping to avoid duplicates
+            grouped_fixations = self._group_consecutive_words(processed_fixations)
+            
+            df = pd.DataFrame(grouped_fixations)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"eye_movement_data_{timestamp}.csv"
             filepath = os.path.join(self.output_dir, filename)
             
             df.to_csv(filepath, index=False)
-            print(f"Exported {len(processed_fixations)} fixations to: {filepath}")
+            print(f"Exported {len(grouped_fixations)} Hebrew word fixations to: {filepath}")
+            print(f"Hebrew words recognized: {len(set(fix['Fixated_Word'] for fix in grouped_fixations))}")
+            print(f"Grouped from {len(processed_fixations)} individual fixations")
             return filepath
-        
+
         return None
+    
+    def _group_consecutive_words(self, fixations):
+        """Group consecutive fixations on the same word to avoid duplicates"""
+        if not fixations:
+            return []
+        
+        grouped_fixations = []
+        current_word = None
+        accumulated_duration = 0
+        accumulated_x = []
+        accumulated_y = []
+        word_start_time = None
+        word_start_order = None
+        pupil_sizes = []
+        blink_frequencies = []
+        
+        for fixation in fixations:
+            word = fixation['Fixated_Word']
+            
+            if word == current_word and current_word is not None:
+                # Same word - accumulate data
+                accumulated_duration += fixation['Fixation_Duration']
+                accumulated_x.append(fixation['Fixation_X_Screen'])
+                accumulated_y.append(fixation['Fixation_Y_Screen'])
+                pupil_sizes.append(fixation['Pupil_Size'])
+                blink_frequencies.append(fixation['Blink_Frequency'])
+            else:
+                # Different word - save previous group if exists
+                if current_word is not None:
+                    grouped_fixations.append({
+                        'Fixation_Order': len(grouped_fixations) + 1,
+                        'Fixated_Word': current_word,
+                        'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
+                        'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
+                        'Fixation_Duration': round(accumulated_duration, 2),
+                        'Time_from_Stimulus_Onset': word_start_time,
+                        'Pupil_Size': round(np.mean(pupil_sizes), 2),
+                        'Blink_Frequency': round(np.mean(blink_frequencies), 2)
+                    })
+                
+                # Start new word group
+                current_word = word
+                word_start_time = fixation['Time_from_Stimulus_Onset']
+                word_start_order = fixation['Fixation_Order']
+                accumulated_duration = fixation['Fixation_Duration']
+                accumulated_x = [fixation['Fixation_X_Screen']]
+                accumulated_y = [fixation['Fixation_Y_Screen']]
+                pupil_sizes = [fixation['Pupil_Size']]
+                blink_frequencies = [fixation['Blink_Frequency']]
+        
+        # Don't forget the last word group
+        if current_word is not None:
+            grouped_fixations.append({
+                'Fixation_Order': len(grouped_fixations) + 1,
+                'Fixated_Word': current_word,
+                'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
+                'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
+                'Fixation_Duration': round(accumulated_duration, 2),
+                'Time_from_Stimulus_Onset': word_start_time,
+                'Pupil_Size': round(np.mean(pupil_sizes), 2),
+                'Blink_Frequency': round(np.mean(blink_frequencies), 2)
+            })
+        
+        return grouped_fixations
     
     def run_text_reading_analysis(self):
         """Run the complete text reading analysis system"""

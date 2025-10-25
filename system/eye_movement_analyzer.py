@@ -35,16 +35,10 @@ class KalmanFilter:
         self.reading_direction = reading_direction
         self.is_rtl = (reading_direction == "rtl")
         
-        if text_reading_mode:
-            # Optimized parameters for text reading
-            self.P = np.eye(4) * 500   # Lower initial uncertainty for more responsive tracking
-            self.Q = np.eye(4) * 0.1  # Lower process noise for smoother reading patterns
-            self.R = np.eye(2) * 10    # Slightly higher measurement noise to reduce jitter
-        else:
-            # Standard parameters
-            self.P = np.eye(4) * 1000  # Error covariance matrix
-            self.Q = np.eye(4) * 0.1   # Process noise
-            self.R = np.eye(2) * 10    # Measurement noise
+        # Text reading mode parameters (same for LTR and RTL)
+        self.P = np.eye(4) * 500   # Lower initial uncertainty for more responsive tracking
+        self.Q = np.eye(4) * 0.1  # Lower process noise for smoother reading patterns
+        self.R = np.eye(2) * 10    # Slightly higher measurement noise to reduce jitter
             
         self.F = np.array([[1, 0, 1, 0],  # State transition model
                           [0, 1, 0, 1],
@@ -58,8 +52,6 @@ class KalmanFilter:
         if self.is_rtl:
             self.reading_direction_bias = -1.2  # Bias towards leftward movement for RTL
             self.expected_saccade_direction = -1  # Negative for leftward saccades
-            # Adjust process noise for RTL (more variable movement patterns)
-            self.Q = np.eye(4) * 0.15  # Higher process noise for RTL
         else:
             self.reading_direction_bias = 1.0   # Bias towards rightward movement for LTR
             self.expected_saccade_direction = 1   # Positive for rightward saccades
@@ -135,7 +127,7 @@ class EyeMovementAnalyzer:
         
         # Fixation detection parameters
         self.fixation_threshold_pixels = 30  # Max movement for fixation
-        self.fixation_min_duration = 0.1     # Minimum fixation duration (seconds)
+        self.fixation_min_duration = FIXATION_THRESHOLD / 1000.0  # Convert ms to seconds from config
         self.current_fixation_start = None
         self.current_fixation_position = None
         
@@ -363,7 +355,7 @@ class EyeMovementAnalyzer:
         
         if current_velocity < 30:  # pixels/second
             return "Fixation"
-        elif current_velocity < 300:
+        elif current_velocity < SACCADE_VELOCITY_THRESHOLD:  
             return "Smooth pursuit"
         else:
             return "Saccade"
@@ -498,18 +490,28 @@ Performance Assessment:
             })
     
     def set_actual_word_positions(self, word_positions: List[Dict]):
-        """UNIFIED PIPELINE: Set actual word positions captured during rendering"""
-        self.word_positions = word_positions
+        """UNIFIED PIPELINE: Set actual word positions captured during rendering with cleaned words"""
+        # Clean the words when storing positions
+        cleaned_positions = []
+        for pos in word_positions:
+            cleaned_word = self.clean_hebrew_word(pos['word'])
+            # Only store positions for valid Hebrew words
+            if self.is_hebrew_word(cleaned_word):
+                cleaned_pos = pos.copy()
+                cleaned_pos['word'] = cleaned_word
+                cleaned_positions.append(cleaned_pos)
+        
+        self.word_positions = cleaned_positions
         self.text_onset_time = time.time()
         
-        # Extract text content from positions for compatibility
-        if word_positions:
-            self.text_content = " ".join([pos['word'] for pos in word_positions])
+        # Extract text content from cleaned positions for compatibility
+        if cleaned_positions:
+            self.text_content = " ".join([pos['word'] for pos in cleaned_positions])
         else:
             self.text_content = ""
     
     def get_fixated_word(self, fixation_x: float, fixation_y: float) -> str:
-        """Determine which word is being fixated based on gaze position"""
+        """Determine which word is being fixated based on gaze position (words are already cleaned)"""
         if not self.word_positions:
             return "Unknown"
         
@@ -526,6 +528,10 @@ Performance Assessment:
             if distance < word_threshold and distance < min_distance:
                 min_distance = distance
                 closest_word = word_info['word']
+        
+        # Words are already cleaned, but double-check for safety
+        if closest_word != "Unknown" and not self.is_hebrew_word(closest_word):
+            return "Unknown"
         
         return closest_word
     
@@ -555,8 +561,27 @@ Performance Assessment:
             return 0.0
         return sum(self.pupil_size_history) / len(self.pupil_size_history)
     
+    def clean_hebrew_word(self, word: str) -> str:
+        """Extract only Hebrew letters from a word, removing punctuation and other marks"""
+        if not word or word == "Unknown":
+            return word
+        
+        # Keep only Hebrew characters (Unicode range U+0590 to U+05FF)
+        cleaned_word = ''.join(char for char in word if '\u0590' <= char <= '\u05FF')
+        
+        # Return cleaned word if it has Hebrew characters, otherwise return "Unknown"
+        return cleaned_word if cleaned_word else "Unknown"
+    
+    def is_hebrew_word(self, word: str) -> bool:
+        """Check if a word contains Hebrew characters"""
+        if not word or word == "Unknown":
+            return False
+        # Check if any character in the word is Hebrew
+        hebrew_chars = any('\u0590' <= char <= '\u05FF' for char in word)
+        return hebrew_chars
+    
     def export_text_reading_csv(self, filename: str = None):
-        """Export text reading specific CSV with fixation-level data"""
+        """Export text reading specific CSV with fixation-level data for Hebrew words only"""
         import csv
         import os
         from datetime import datetime
@@ -577,24 +602,88 @@ Performance Assessment:
         
         full_path = os.path.join(data_dir, filename)
         
-        # Prepare fixation-level data
+        # NOTE: This method is DEPRECATED and never called. 
+        # CSV export is now handled by prediction.py with proper grouping.
+        # Prepare fixation-level data with Hebrew words only and grouping
         csv_data = []
+        last_word = None
+        last_word_start_time = None
+        accumulated_duration = 0
+        accumulated_x = 0
+        accumulated_y = 0
+        fixation_count_for_word = 0
         
         for i, fixation in enumerate(self.fixations):
             # Get the word being fixated
             fixated_word = self.get_fixated_word(fixation['x'], fixation['y'])
             
-            # Calculate time from stimulus onset
+            # Skip Unknown words and non-Hebrew words completely
+            if fixated_word == "Unknown" or not self.is_hebrew_word(fixated_word):
+                continue
+            
+            # Additional safety check - ensure word contains only Hebrew letters
+            cleaned_word = self.clean_hebrew_word(fixated_word)
+            if cleaned_word == "Unknown" or not self.is_hebrew_word(cleaned_word):
+                continue
+            
+            # Use the cleaned word for processing
+            fixated_word = cleaned_word
+            
+            # Check if this is the same word as the previous one
+            if fixated_word == last_word and last_word is not None:
+                # Same word - accumulate data
+                accumulated_duration += fixation['duration']
+                accumulated_x += fixation['x']
+                accumulated_y += fixation['y']
+                fixation_count_for_word += 1
+            else:
+                # Different word - first save the previous word if it exists
+                if last_word is not None:
+                    # Calculate averages for the accumulated word
+                    avg_x = accumulated_x / fixation_count_for_word
+                    avg_y = accumulated_y / fixation_count_for_word
+                    
+                    # Calculate time from stimulus onset
+                    time_from_onset = 0
+                    if self.text_onset_time:
+                        time_from_onset = last_word_start_time - self.text_onset_time
+                    
+                    csv_row = {
+                        'Fixation_Order': len(csv_data) + 1,
+                        'Fixated_Word': last_word,
+                        'Fixation_X_Screen': round(avg_x, 2),
+                        'Fixation_Y_Screen': round(avg_y, 2),
+                        'Fixation_Duration': round(accumulated_duration * 1000, 2),  # Convert to milliseconds
+                        'Time_from_Stimulus_Onset': round(time_from_onset * 1000, 2),  # Convert to milliseconds
+                        'Pupil_Size': round(self.get_average_pupil_size(), 2),
+                        'Blink_Frequency': round(self.get_blink_frequency(), 2)
+                    }
+                    
+                    csv_data.append(csv_row)
+                
+                # Start new word accumulation
+                last_word = fixated_word
+                last_word_start_time = fixation['start_time']
+                accumulated_duration = fixation['duration']
+                accumulated_x = fixation['x']
+                accumulated_y = fixation['y']
+                fixation_count_for_word = 1
+        
+        # Don't forget the last word
+        if last_word is not None and self.is_hebrew_word(last_word):
+            avg_x = accumulated_x / fixation_count_for_word
+            avg_y = accumulated_y / fixation_count_for_word
+            
             time_from_onset = 0
             if self.text_onset_time:
-                time_from_onset = fixation['start_time'] - self.text_onset_time
+                time_from_onset = last_word_start_time - self.text_onset_time
             
             csv_row = {
-                'Fixation_Order': i + 1,
-                'Fixated_Word': fixated_word,
-                'Fixation_X_Screen': round(fixation['x'], 2),
-                'Fixation_Y_Screen': round(fixation['y'], 2),
-                'Fixation_Duration': round(fixation['duration'] * 1000, 2),  # Convert to milliseconds
+                'Fixation_Order': len(csv_data) + 1,
+                'Fixated_Word': last_word,
+                'Fixation_X_Screen': round(avg_x, 2),
+                'Fixation_Y_Screen': round(avg_y, 2),
+                'Fixation_Duration': round(accumulated_duration * 1000, 2),  # Convert to milliseconds
                 'Time_from_Stimulus_Onset': round(time_from_onset * 1000, 2),  # Convert to milliseconds
                 'Pupil_Size': round(self.get_average_pupil_size(), 2),
                 'Blink_Frequency': round(self.get_blink_frequency(), 2)
@@ -612,13 +701,14 @@ Performance Assessment:
                 writer.writeheader()
                 writer.writerows(csv_data)
             
-            print(f"Text reading data exported to: {full_path}")
-            print(f"Total fixations: {len(csv_data)}")
+            print(f"Hebrew text reading data exported to: {full_path}")
+            print(f"Total Hebrew word fixations: {len(csv_data)}")
+            print(f"Hebrew words recognized: {len(set(row['Fixated_Word'] for row in csv_data))}")
             print(f"Blink frequency: {self.get_blink_frequency():.1f} blinks/min")
             
             return full_path
         else:
-            print("No fixation data available for export")
+            print("No Hebrew word fixation data available for export")
             return None
     
     def export_data_to_csv(self, filename: str = None):

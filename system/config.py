@@ -199,7 +199,7 @@ READING_TEXT =  """
 """
 
 # Eye Movement Analysis Settings
-FIXATION_THRESHOLD = 50             # Minimum duration (ms) to count as fixation
+FIXATION_THRESHOLD = 50              # Minimum duration (ms) to count as fixation
 SACCADE_VELOCITY_THRESHOLD = 200    # Minimum velocity (px/s) for saccade detection
 WORD_PROXIMITY_THRESHOLD = 100       # Maximum distance (px) to associate gaze with word
 ANALYSIS_EXPORT_FORMAT = "detailed"  # "detailed" or "simple"
