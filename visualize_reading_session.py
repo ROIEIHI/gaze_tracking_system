@@ -22,7 +22,7 @@ import sys
 
 # Set matplotlib to support Hebrew fonts and proper RTL display
 plt.rcParams['font.family'] = ['Arial Unicode MS', 'Tahoma', 'DejaVu Sans', 'Arial']
-plt.rcParams['font.size'] = 21  # Increased font size by 30% (16 * 1.3 = 21)
+plt.rcParams['font.size'] = 25  # Increased font size by another 20% (21 * 1.2 = 25)
 plt.rcParams['axes.unicode_minus'] = False
 
 def fix_hebrew_display(text):
@@ -42,8 +42,6 @@ def is_hebrew_text(text):
         return False
     hebrew_chars = any('\u0590' <= char <= '\u05FF' for char in str(text))
     return hebrew_chars
-
-# Grouping function removed - CSV data is already properly grouped by prediction.py
 
 def load_reading_data(csv_path):
     """Load and prepare the reading session data with Hebrew support"""
@@ -134,11 +132,11 @@ def create_spatial_heatmap(data):
         plt.colorbar(im, label='Heat Intensity (Duration)', ax=ax)
         plt.colorbar(scatter, label='Fixation Duration (ms)', ax=ax)
     
-    ax.set_xlabel('Screen X Position (pixels)', fontsize=21)
-    ax.set_ylabel('Screen Y Position (pixels)', fontsize=21)
+    ax.set_xlabel('Screen X Position (pixels)', fontsize=25)
+    ax.set_ylabel('Screen Y Position (pixels)', fontsize=25)
     ax.set_title('Spatial Heatmap: Reading Fixation Clusters', 
-                 fontsize=23, pad=20)
-    ax.tick_params(labelsize=18)
+                 fontsize=28, pad=20)
+    ax.tick_params(labelsize=22)
     ax.set_xlim(0, 1080)
     ax.set_ylim(720, 0)
     
@@ -161,11 +159,11 @@ def create_reading_path(data):
     scatter = ax.scatter(x_path, y_path, c=range(len(x_path)), 
                         cmap='plasma', s=120, alpha=0.8, edgecolors='white', linewidth=1)
     plt.colorbar(scatter, ax=ax, label='Reading Sequence')
-    ax.set_xlabel('X Position (pixels)', fontsize=21)
-    ax.set_ylabel('Y Position (pixels)', fontsize=21)
-    ax.set_title('Reading Path: Sequential Eye Movement Pattern', fontsize=23, pad=20) 
+    ax.set_xlabel('X Position (pixels)', fontsize=25)
+    ax.set_ylabel('Y Position (pixels)', fontsize=25)
+    ax.set_title('Reading Path: Sequential Eye Movement Pattern', fontsize=28, pad=20) 
     ax.invert_yaxis()
-    ax.tick_params(labelsize=18)
+    ax.tick_params(labelsize=22)
     
     plt.tight_layout()
     return fig
@@ -177,37 +175,18 @@ def create_duration_histogram(data):
     durations = data['Fixation_Duration'].values
 
     ax.hist(durations, bins=30, alpha=0.7, color='skyblue', edgecolor='black', linewidth=1.5)
-    ax.axvline(np.mean(durations), color='red', linestyle='--', linewidth=3, 
+    mean_line = ax.axvline(np.mean(durations), color='red', linestyle='--', linewidth=3, 
                 label=f'Mean: {np.mean(durations):.1f}ms')
-    ax.axvline(np.median(durations), color='orange', linestyle='--', linewidth=3,
+    median_line = ax.axvline(np.median(durations), color='orange', linestyle='--', linewidth=3,
                 label=f'Median: {np.median(durations):.1f}ms')
     
-    # Add reference lines for reading patterns
-    ax.axvline(200, color='green', linestyle=':', alpha=0.7, linewidth=2, label='Quick reading threshold')
-    ax.axvline(500, color='purple', linestyle=':', alpha=0.7, linewidth=2, label='Careful reading threshold')
-    
-    ax.set_xlabel('Fixation Duration (ms)', fontsize=23)
-    ax.set_ylabel('Frequency', fontsize=23)
-    ax.set_title('Fixation Duration Distribution', fontsize=29, pad=20)
-    ax.legend(fontsize=18)
+    ax.set_xlabel('Fixation Duration (ms)', fontsize=28)
+    ax.set_ylabel('Frequency', fontsize=28)
+    ax.set_title('Fixation Duration Distribution', fontsize=35, pad=20)
+    # Add legend with only mean and median lines
+    ax.legend(handles=[mean_line, median_line], fontsize=22, loc='upper right')
     ax.grid(True, alpha=0.3)
-    ax.tick_params(labelsize=21)
-    
-    # Add statistics text box
-    stats_text = f"""Statistics:
-Total Events: {len(durations)}
-Mean: {np.mean(durations):.1f} ms
-Median: {np.median(durations):.1f} ms
-Std Dev: {np.std(durations):.1f} ms
-Range: {durations.min():.0f} - {durations.max():.0f} ms
-
-Reading Patterns:
-Quick (<200ms): {np.sum(durations < 200)} ({100*np.sum(durations < 200)/len(durations):.1f}%)
-Normal (200-500ms): {np.sum((durations >= 200) & (durations <= 500))} ({100*np.sum((durations >= 200) & (durations <= 500))/len(durations):.1f}%)
-Careful (>500ms): {np.sum(durations > 500)} ({100*np.sum(durations > 500)/len(durations):.1f}%)"""
-    
-    ax.text(0.65, 0.95, stats_text, transform=ax.transAxes, fontsize=16,
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
+    ax.tick_params(labelsize=25)
     
     plt.tight_layout()
     return fig
@@ -224,17 +203,12 @@ def create_temporal_timeline(data):
     ax.axhline(np.mean(durations), color='red', linestyle='--', alpha=0.8, linewidth=3,
                label=f'Average: {np.mean(durations):.1f}ms')
     
-    # Add trend line
-    z = np.polyfit(times, durations, 1)
-    p = np.poly1d(z)
-    ax.plot(times, p(times), "r--", alpha=0.5, linewidth=2, label='Trend')
-    
-    ax.set_xlabel('Time from Session Start (ms)', fontsize=23)
-    ax.set_ylabel('Fixation Duration (ms)', fontsize=23)
-    ax.set_title('Temporal Pattern: Reading Duration Over Time', fontsize=29, pad=20)
-    ax.legend(fontsize=18)
+    ax.set_xlabel('Time from Session Start (ms)', fontsize=28)
+    ax.set_ylabel('Fixation Duration (ms)', fontsize=28)
+    ax.set_title('Temporal Pattern: Reading Duration Over Time', fontsize=35, pad=20)
+    ax.legend(fontsize=22)
     ax.grid(True, alpha=0.3)
-    ax.tick_params(labelsize=21)
+    ax.tick_params(labelsize=25)
     
     plt.tight_layout()
     return fig
@@ -258,20 +232,20 @@ def create_hebrew_word_frequency(data):
             formatted_word = fix_hebrew_display(word)
             hebrew_labels.append(formatted_word)
         
-        ax.set_yticklabels(hebrew_labels, fontsize=18)
-        ax.set_xlabel('Number of Reading Events', fontsize=23)
-        ax.set_title('Most Frequently Read Hebrew Words', fontsize=29, pad=20)
-        ax.tick_params(labelsize=21)
+        ax.set_yticklabels(hebrew_labels, fontsize=22)
+        ax.set_xlabel('Number of Reading Events', fontsize=28)
+        ax.set_title('Most Frequently Read Hebrew Words', fontsize=35, pad=20)
+        ax.tick_params(labelsize=25)
         
         # Add value labels on bars
         for i, bar in enumerate(bars):
             width = bar.get_width()
             ax.text(width + 0.1, bar.get_y() + bar.get_height()/2, 
-                    f'{int(width)}', ha='left', va='center', fontsize=18, fontweight='bold')
+                    f'{int(width)}', ha='left', va='center', fontsize=22, fontweight='bold')
     else:
         ax.text(0.5, 0.5, 'No Hebrew words found in data', 
-                ha='center', va='center', transform=ax.transAxes, fontsize=23)
-        ax.set_title('Hebrew Word Analysis', fontsize=29)
+                ha='center', va='center', transform=ax.transAxes, fontsize=28)
+        ax.set_title('Hebrew Word Analysis', fontsize=35)
     
     plt.tight_layout()
     return fig
@@ -294,92 +268,22 @@ def create_word_duration_analysis(data):
             formatted_word = fix_hebrew_display(word)
             duration_labels.append(formatted_word)
         
-        ax.set_yticklabels(duration_labels, fontsize=18)
-        ax.set_xlabel('Average Reading Duration (ms)', fontsize=23)
-        ax.set_title('Average Reading Duration by Hebrew Word', fontsize=29, pad=20)
-        ax.tick_params(labelsize=21)
+        ax.set_yticklabels(duration_labels, fontsize=22)
+        ax.set_xlabel('Average Reading Duration (ms)', fontsize=28)
+        ax.set_title('Average Reading Duration by Hebrew Word', fontsize=35, pad=20)
+        ax.tick_params(labelsize=25)
         
         # Add value labels
         for i, bar in enumerate(bars):
             width = bar.get_width()
             ax.text(width + 10, bar.get_y() + bar.get_height()/2, 
-                    f'{int(width)}ms', ha='left', va='center', fontsize=16, fontweight='bold')
+                    f'{int(width)}ms', ha='left', va='center', fontsize=19, fontweight='bold')
     else:
         ax.text(0.5, 0.5, 'No word duration data available', 
-                ha='center', va='center', transform=ax.transAxes, fontsize=23)
-        ax.set_title('Word Duration Analysis', fontsize=29)
+                ha='center', va='center', transform=ax.transAxes, fontsize=28)
+        ax.set_title('Word Duration Analysis', fontsize=35)
     
     plt.tight_layout()
-    return fig
-
-def create_summary_statistics(data):
-    """Create comprehensive summary statistics in separate window"""
-    fig, ax = plt.subplots(figsize=(16, 12))
-    ax.axis('off')
-    
-    # Calculate statistics
-    durations = data['Fixation_Duration'].values
-    session_duration = data['Time_from_Stimulus_Onset'].max() / 1000.0
-    unique_words = len(data[data['Fixated_Word'] != 'Unknown'])
-    total_reading_time = np.sum(durations) / 1000.0  # Convert to seconds
-    
-    stats_text = f"""
-    📊 READING SESSION ANALYSIS SUMMARY 📊
-    
-    ═══════════════════════════════════════════════════════════════
-    
-    📋 SESSION OVERVIEW:
-    • Total Session Duration: {session_duration:.1f} seconds
-    • Total Reading Time: {total_reading_time:.1f} seconds ({100*total_reading_time/session_duration:.1f}% of session)
-    • Reading Events Analyzed: {len(data)}
-    • Start Time: {data['Time_from_Stimulus_Onset'].min()/1000:.1f}s
-    • End Time: {data['Time_from_Stimulus_Onset'].max()/1000:.1f}s
-    
-    ═══════════════════════════════════════════════════════════════
-    
-    ⏱️ DURATION STATISTICS:
-    • Mean Duration: {np.mean(durations):.1f} ms
-    • Median Duration: {np.median(durations):.1f} ms
-    • Standard Deviation: {np.std(durations):.1f} ms
-    • Duration Range: {durations.min():.0f} - {durations.max():.0f} ms
-    
-    ═══════════════════════════════════════════════════════════════
-    
-    📖 READING PATTERNS:
-    
-    Duration Categories:
-    • Quick reading (<200ms): {np.sum(durations < 200)} events ({100*np.sum(durations < 200)/len(durations):.1f}%)
-    • Normal reading (200-500ms): {np.sum((durations >= 200) & (durations <= 500))} events ({100*np.sum((durations >= 200) & (durations <= 500))/len(durations):.1f}%)
-    • Careful reading (>500ms): {np.sum(durations > 500)} events ({100*np.sum(durations > 500)/len(durations):.1f}%)
-    
-    ═══════════════════════════════════════════════════════════════
-    
-    🔤 WORD ANALYSIS:
-    • Recognized Hebrew Words: {unique_words}
-    • Unknown Positions: {(data['Fixated_Word'] == 'Unknown').sum()}
-    
-    ═══════════════════════════════════════════════════════════════
-    
-    📈 READING EFFICIENCY:
-    • Estimated Reading Speed: {60*unique_words/total_reading_time:.1f} words/minute
-    • Average Time per Word: {total_reading_time*1000/unique_words:.0f} ms/word
-    • Reading Event Rate: {len(data)/session_duration:.1f} events/second
-    • Word Processing Rate: {unique_words/session_duration:.1f} words/second
-    
-    ═══════════════════════════════════════════════════════════════
-    
-    📊 PERFORMANCE INDICATORS:
-    • Reading Fluency: {'High' if 60*unique_words/total_reading_time > 200 else 'Moderate' if 60*unique_words/total_reading_time > 150 else 'Careful'}
-    • Comprehension Style: {'Quick scan' if np.mean(durations) < 250 else 'Thorough reading' if np.mean(durations) > 400 else 'Balanced reading'}
-    • Text Engagement: {'High' if total_reading_time/session_duration > 0.8 else 'Moderate' if total_reading_time/session_duration > 0.6 else 'Selective'}
-    
-    ═══════════════════════════════════════════════════════════════
-    """
-    
-    ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=16,
-            verticalalignment='top', fontfamily='monospace',
-            bbox=dict(boxstyle='round,pad=1', facecolor='lightblue', alpha=0.8))
-    
     return fig
 
 def find_latest_csv_file():
@@ -433,7 +337,7 @@ def main():
     # Automatically find the most recent CSV file
     csv_path = find_latest_csv_file()
     if csv_path is None:
-        print("❌ No CSV file found. Please run an eye tracking session first.")
+        print("No CSV file found. Please run an eye tracking session first.")
         return
     
     # Load data (grouping happens silently in background)
@@ -492,12 +396,6 @@ def main():
     plt.show()
     input("Press Enter to continue to next visualization...")
     
-    # 7. Summary Statistics
-    print("\n7. Creating summary statistics...")
-    fig7 = create_summary_statistics(grouped_data)
-    fig7.savefig(f"{output_dir}/07_summary_stats.png", dpi=300, bbox_inches='tight')
-    plt.show()
-    
     # Disable interactive mode
     plt.ioff()
     
@@ -509,7 +407,6 @@ def main():
     print(f"   04_temporal_timeline.png")
     print(f"   05_hebrew_word_frequency.png")
     print(f"   06_word_duration_analysis.png")
-    print(f"   07_summary_stats.png")
     
     print(f"\n📊 Analysis Summary:")
     print(f"   • Reading events analyzed: {len(grouped_data)}")
