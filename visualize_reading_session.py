@@ -22,7 +22,7 @@ import sys
 
 # Set matplotlib to support Hebrew fonts and proper RTL display
 plt.rcParams['font.family'] = ['Arial Unicode MS', 'Tahoma', 'DejaVu Sans', 'Arial']
-plt.rcParams['font.size'] = 16  # Increase default font size
+plt.rcParams['font.size'] = 21  # Increased font size by 30% (16 * 1.3 = 21)
 plt.rcParams['axes.unicode_minus'] = False
 
 def fix_hebrew_display(text):
@@ -134,11 +134,11 @@ def create_spatial_heatmap(data):
         plt.colorbar(im, label='Heat Intensity (Duration)', ax=ax)
         plt.colorbar(scatter, label='Fixation Duration (ms)', ax=ax)
     
-    ax.set_xlabel('Screen X Position (pixels)', fontsize=16)
-    ax.set_ylabel('Screen Y Position (pixels)', fontsize=16)
+    ax.set_xlabel('Screen X Position (pixels)', fontsize=21)
+    ax.set_ylabel('Screen Y Position (pixels)', fontsize=21)
     ax.set_title('Spatial Heatmap: Reading Fixation Clusters', 
-                 fontsize=18, pad=20)
-    ax.tick_params(labelsize=14)
+                 fontsize=23, pad=20)
+    ax.tick_params(labelsize=18)
     ax.set_xlim(0, 1080)
     ax.set_ylim(720, 0)
     
@@ -161,11 +161,11 @@ def create_reading_path(data):
     scatter = ax.scatter(x_path, y_path, c=range(len(x_path)), 
                         cmap='plasma', s=120, alpha=0.8, edgecolors='white', linewidth=1)
     plt.colorbar(scatter, ax=ax, label='Reading Sequence')
-    ax.set_xlabel('X Position (pixels)', fontsize=16)
-    ax.set_ylabel('Y Position (pixels)', fontsize=16)
-    ax.set_title('Reading Path: Sequential Eye Movement Pattern', fontsize=18, pad=20) 
+    ax.set_xlabel('X Position (pixels)', fontsize=21)
+    ax.set_ylabel('Y Position (pixels)', fontsize=21)
+    ax.set_title('Reading Path: Sequential Eye Movement Pattern', fontsize=23, pad=20) 
     ax.invert_yaxis()
-    ax.tick_params(labelsize=14)
+    ax.tick_params(labelsize=18)
     
     plt.tight_layout()
     return fig
@@ -186,12 +186,12 @@ def create_duration_histogram(data):
     ax.axvline(200, color='green', linestyle=':', alpha=0.7, linewidth=2, label='Quick reading threshold')
     ax.axvline(500, color='purple', linestyle=':', alpha=0.7, linewidth=2, label='Careful reading threshold')
     
-    ax.set_xlabel('Fixation Duration (ms)', fontsize=18)
-    ax.set_ylabel('Frequency', fontsize=18)
-    ax.set_title('Fixation Duration Distribution', fontsize=22, pad=20)
-    ax.legend(fontsize=14)
-    ax.grid(alpha=0.3)
-    ax.tick_params(labelsize=16)
+    ax.set_xlabel('Fixation Duration (ms)', fontsize=23)
+    ax.set_ylabel('Frequency', fontsize=23)
+    ax.set_title('Fixation Duration Distribution', fontsize=29, pad=20)
+    ax.legend(fontsize=18)
+    ax.grid(True, alpha=0.3)
+    ax.tick_params(labelsize=21)
     
     # Add statistics text box
     stats_text = f"""Statistics:
@@ -206,7 +206,7 @@ Quick (<200ms): {np.sum(durations < 200)} ({100*np.sum(durations < 200)/len(dura
 Normal (200-500ms): {np.sum((durations >= 200) & (durations <= 500))} ({100*np.sum((durations >= 200) & (durations <= 500))/len(durations):.1f}%)
 Careful (>500ms): {np.sum(durations > 500)} ({100*np.sum(durations > 500)/len(durations):.1f}%)"""
     
-    ax.text(0.65, 0.95, stats_text, transform=ax.transAxes, fontsize=12,
+    ax.text(0.65, 0.95, stats_text, transform=ax.transAxes, fontsize=16,
             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.9))
     
     plt.tight_layout()
@@ -229,12 +229,12 @@ def create_temporal_timeline(data):
     p = np.poly1d(z)
     ax.plot(times, p(times), "r--", alpha=0.5, linewidth=2, label='Trend')
     
-    ax.set_xlabel('Time from Session Start (ms)', fontsize=18)
-    ax.set_ylabel('Fixation Duration (ms)', fontsize=18)
-    ax.set_title('Temporal Pattern: Reading Duration Over Time', fontsize=22, pad=20)
-    ax.legend(fontsize=14)
-    ax.grid(alpha=0.3)
-    ax.tick_params(labelsize=16)
+    ax.set_xlabel('Time from Session Start (ms)', fontsize=23)
+    ax.set_ylabel('Fixation Duration (ms)', fontsize=23)
+    ax.set_title('Temporal Pattern: Reading Duration Over Time', fontsize=29, pad=20)
+    ax.legend(fontsize=18)
+    ax.grid(True, alpha=0.3)
+    ax.tick_params(labelsize=21)
     
     plt.tight_layout()
     return fig
@@ -258,20 +258,20 @@ def create_hebrew_word_frequency(data):
             formatted_word = fix_hebrew_display(word)
             hebrew_labels.append(formatted_word)
         
-        ax.set_yticklabels(hebrew_labels, fontsize=14)
-        ax.set_xlabel('Number of Reading Events', fontsize=18)
-        ax.set_title('Most Frequently Read Hebrew Words', fontsize=22, pad=20)
-        ax.tick_params(labelsize=16)
+        ax.set_yticklabels(hebrew_labels, fontsize=18)
+        ax.set_xlabel('Number of Reading Events', fontsize=23)
+        ax.set_title('Most Frequently Read Hebrew Words', fontsize=29, pad=20)
+        ax.tick_params(labelsize=21)
         
         # Add value labels on bars
         for i, bar in enumerate(bars):
             width = bar.get_width()
             ax.text(width + 0.1, bar.get_y() + bar.get_height()/2, 
-                    f'{int(width)}', ha='left', va='center', fontsize=14, fontweight='bold')
+                    f'{int(width)}', ha='left', va='center', fontsize=18, fontweight='bold')
     else:
         ax.text(0.5, 0.5, 'No Hebrew words found in data', 
-                ha='center', va='center', transform=ax.transAxes, fontsize=18)
-        ax.set_title('Hebrew Word Analysis', fontsize=22)
+                ha='center', va='center', transform=ax.transAxes, fontsize=23)
+        ax.set_title('Hebrew Word Analysis', fontsize=29)
     
     plt.tight_layout()
     return fig
@@ -294,20 +294,20 @@ def create_word_duration_analysis(data):
             formatted_word = fix_hebrew_display(word)
             duration_labels.append(formatted_word)
         
-        ax.set_yticklabels(duration_labels, fontsize=14)
-        ax.set_xlabel('Average Reading Duration (ms)', fontsize=18)
-        ax.set_title('Average Reading Duration by Hebrew Word', fontsize=22, pad=20)
-        ax.tick_params(labelsize=16)
+        ax.set_yticklabels(duration_labels, fontsize=18)
+        ax.set_xlabel('Average Reading Duration (ms)', fontsize=23)
+        ax.set_title('Average Reading Duration by Hebrew Word', fontsize=29, pad=20)
+        ax.tick_params(labelsize=21)
         
         # Add value labels
         for i, bar in enumerate(bars):
             width = bar.get_width()
             ax.text(width + 10, bar.get_y() + bar.get_height()/2, 
-                    f'{int(width)}ms', ha='left', va='center', fontsize=12, fontweight='bold')
+                    f'{int(width)}ms', ha='left', va='center', fontsize=16, fontweight='bold')
     else:
         ax.text(0.5, 0.5, 'No word duration data available', 
-                ha='center', va='center', transform=ax.transAxes, fontsize=18)
-        ax.set_title('Word Duration Analysis', fontsize=22)
+                ha='center', va='center', transform=ax.transAxes, fontsize=23)
+        ax.set_title('Word Duration Analysis', fontsize=29)
     
     plt.tight_layout()
     return fig
@@ -376,7 +376,7 @@ def create_summary_statistics(data):
     ═══════════════════════════════════════════════════════════════
     """
     
-    ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=12,
+    ax.text(0.05, 0.95, stats_text, transform=ax.transAxes, fontsize=16,
             verticalalignment='top', fontfamily='monospace',
             bbox=dict(boxstyle='round,pad=1', facecolor='lightblue', alpha=0.8))
     
