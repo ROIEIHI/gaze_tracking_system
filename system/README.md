@@ -1,10 +1,12 @@
-# Advanced Eye Movement Tracking System
+# Gaze Tracking and Reading Analysis System
 
-A professional multilingual eye tracking system with comprehensive support for Hebrew RTL and English LTR text reading analysis. The system combines computer vision, machine learning, and advanced signal processing to provide accurate gaze tracking and movement analysis for reading research.
+This project is an end-to-end, professional system for real-time gaze tracking and advanced reading analysis using only a standard off-the-shelf RGB webcam.
 
-## System Overview
+The system is built on a pipeline combining modern computer vision, a highly-optimized machine learning regressor, and advanced signal processing to transform noisy webcam data into stable, research-grade metrics. It features robust support for multilingual text analysis, including Hebrew (RTL) and English (LTR), by incorporating direction-aware adaptive filtering.
 
-This system provides real-time eye tracking with specialized support for bidirectional text analysis. It uses MediaPipe for facial landmark detection, implements custom Kalman filtering for smooth gaze prediction, and includes RTL-aware text rendering for Hebrew research applications. The system follows a complete workflow from calibration through model training to real-time analysis with comprehensive data export capabilities.
+## System Pipeline & Methodology
+
+The core of the system is a feature-based appearance pipeline (as described in ) that maps facial features to on-screen coordinates. This approach avoids expensive, specialized hardware and enables real-time performance on consumer devices.
 
 ## Quick Setup
 
@@ -22,77 +24,52 @@ For detailed installation instructions and troubleshooting, see `SETUP_README.md
 Launch the GUI interface:
 
 ```bash
-python gui.py
+python start.py
 ```
 
 The interface provides a complete workflow with user session management, progress tracking, and automated directory organization.
 
-## Calibration Process
+## Pipeline
 
-The system uses a strategic calibration approach combining targeted points and comprehensive coverage:
+The pipeline proceeds as follows:
 
-### Calibration Features
-- **Strategic Points**: 21 carefully positioned points targeting screen corners, edges, and center regions
-- **Grid Calibration**: Configurable density grid (6x6 default) for comprehensive coverage  
-- **Face Detection**: Real-time MediaPipe integration for consistent landmark tracking
-- **Pitch Baseline**: User-initiated baseline measurement for improved vertical accuracy
-- **Quality Control**: Automatic outlier detection and data validation
+### 1. Landmark Detection: 
+Captures real-time video and uses Google's MediaPipe Face Mesh to extract 468 3D facial landmarks, including precise iris localization.
+
+### 2. Head Pose Estimation: 
+Employs OpenCV's solvePnP algorithm to estimate the 3D head orientation (rotation and translation vectors) from a set of 6 stable facial landmarks.
+
+### 3. Calibration:
+An optimized calibration process is used to gather a user-specific training dataset. Based on empirical analysis, the optimal balance between accuracy and user fatigue was found to be:
+- **30 Calibration Points:** A specific grid layout (see Figure 7) ensures full-screen coverage.
+- **11 Frames per Point:** Capturing a burst of 11 frames per target provided the lowest prediction error while minimizing overfitting (see Figure 8).
+
+### 4. Feature Engineering: 
+A set of 11 predictive features is engineered from the raw landmark data. This is the final feature vector used for training:
+- **Normalized Pupil Coordinates (4 features):** Left and right pupil (x, y) coordinates, normalized relative to the facial bounding box to be position-invariant.
+- **Head Pose (2 features):** Baseline-adjusted *Pitch* and *Yaw*. A center-fixation phase at calibration start establishes this baseline.
+- **Translation Vector (3 features):** The *tvec* [x, y, z] output from solvePnP, representing the head's position in space
+- **Interation Terms (2 features):** Cross-term features that capture the dependency between head position and eye orientation (e.g., tvect-x multiplied by normalized horizontal pupil position).
+
+### 5. Model Training: 
+The system was benchmarked against multiple regression models (RandomForest, Neural Networks, SVR). The best-performing model was a Multi-Output XGBoost Regressor.This model outperformed all others, including a two-model (separate X/Y) XGBoost approach, achieving a Cross-Validated best RMSE of 31.17 pixels
+
+## 6. Prediction and Analysis
+The prediction pipeline (see Figure 12) uses a two-stage filtering process for maximum stability and analytic precision:
+- **Base Kalman Filter:** A simple Kalman filter first stabilizes the raw, noisy (x, y) predictions from the XGBoost model.
+- **Adaptive Kalman Filter** A second, more advanced analyzer models the gaze as a 4D state vector ([x, y, v_x, v_y]). This filter is velocity-adaptive: its process noise parameter Q is dynamically adjusted in real-time. Q is lowered for slow movements (fixations) to increase smoothing and raised for rapid movements (saccades) to improve responsiveness.
 
 ### Setup Instructions
 Position yourself 60-80cm from the screen and follow the red calibration points. Keep your head stable during each measurement phase.
 
-## Model Training and Data Engineering
 
-The system employs a multi-output RandomForest approach optimized for spatial accuracy:
-
-### Feature Engineering
-```python
-# Raw Features
-norm_x_L, norm_y_L    # Left eye normalized coordinates
-norm_x_R, norm_y_R    # Right eye normalized coordinates
-yaw, pitch, roll      # Head pose parameters
-
-# Engineered Features
-pitch = pitch_raw - pitch_baseline    # Baseline-adjusted pitch
-x_yaw_interaction = avg_norm_x * yaw  # Eye-head interaction
-y_pitch_interaction = avg_norm_y * pitch
-```
-
-### Training Process
-- **Multi-output RandomForest** for joint X/Y coordinate prediction
-- **Custom Euclidean distance scorer** for spatial optimization
-- **GridSearchCV hyperparameter tuning** with cross-validation
-- **Model evaluation** using spatial accuracy metrics
 
 ### Performance Characteristics
 | Metric | Value |
 |--------|--------|
-| Euclidean distance error | ~110 pixels (typical) |
-| X-coordinate R² | ~0.90 |
-| Y-coordinate R² | ~0.78 |
-| Validation | Cross-validated with custom spatial scorer |
-
-## Prediction and Text Analysis
-
-The prediction system includes advanced movement analysis with RTL support:
-
-### Gaze Prediction
-- **Real-time coordinate prediction** using trained RandomForest model
-- **Optional exponential smoothing** for stable tracking
-- **Confidence-based filtering** for robust predictions
-
-### Kalman Filtering
-```python
-# RTL Mode (Hebrew)
-reading_direction_bias = -1.2    # Leftward bias
-process_noise = 0.15             # Higher variability
-saccade_direction = -1           # Leftward saccades
-
-# LTR Mode (English)  
-reading_direction_bias = 1.0     # Rightward bias
-process_noise = 0.1              # Standard variability
-saccade_direction = 1            # Rightward saccades
-```
+| Euclidean distance error | ~50 pixels (typical) |
+| R² Test Score | ~0.97 |
+| Overfitting Score | ~0.022 |
 
 ### Text Rendering
 - **Hebrew RTL rendering** using PIL with proper bidirectional text processing
@@ -136,7 +113,7 @@ user_sessions/
 | Component | Technology | Purpose |
 |-----------|------------|---------|
 | **Computer Vision** | MediaPipe | 468 3D facial landmarks detection |
-| **Machine Learning** | Multi-output RandomForest | Custom Euclidean optimization |
+| **Machine Learning** | Multi-output XGBoost | Custom Euclidean optimization |
 | **Signal Processing** | Kalman filtering | Reading-direction adaptive parameters |
 | **Text Processing** | python-bidi, arabic-reshaper | Bidirectional text rendering |
 | **Data Export** | CSV format | Standard eye tracking research tools |
@@ -148,7 +125,7 @@ user_sessions/
 - **Camera**: USB webcam (720p+ recommended)
 - **Memory**: 8GB RAM minimum, 16GB recommended
 - **Storage**: 2GB free space
-- **OS**: Windows 10+, macOS 10.15+, or Linux Ubuntu 20.04+
+- **OS**: Windows 10+
 
 ### Key Dependencies
 
