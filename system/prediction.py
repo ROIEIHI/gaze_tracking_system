@@ -18,6 +18,133 @@ import pandas as pd
 from PIL import ImageFont, ImageDraw, Image
 import os
 import re
+import threading
+from queue import Queue
+import json
+
+class VideoRecorder:
+    """Video recording helper class for gaze tracking sessions"""
+    
+    def __init__(self, output_dir: str, session_id: str = "session"):
+        """Initialize video recorder"""
+        self.output_dir = output_dir
+        self.session_id = session_id
+        self.camera_writer = None
+        self.overlay_writer = None
+        self.is_recording = False
+        self.camera_path = None
+        self.overlay_path = None
+        
+        # Threading for async writing (optional performance enhancement)
+        self.camera_queue = Queue(maxsize=VIDEO_BUFFER_SIZE) if VIDEO_RECORDING_ENABLED else None
+        self.overlay_queue = Queue(maxsize=VIDEO_BUFFER_SIZE) if VIDEO_RECORDING_ENABLED else None
+        self.write_thread = None
+        self.stop_event = threading.Event()
+        
+    def start_recording(self, fps: int = VIDEO_FPS) -> tuple:
+        """Start video recording and return file paths"""
+        if not VIDEO_RECORDING_ENABLED:
+            return None, None
+            
+        try:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            
+            # Define output paths
+            if RECORD_CAMERA_FEED:
+                self.camera_path = os.path.join(self.output_dir, f"camera_feed_{self.session_id}_{timestamp}.mp4")
+            if RECORD_OVERLAY_DISPLAY:
+                self.overlay_path = os.path.join(self.output_dir, f"overlay_display_{self.session_id}_{timestamp}.mp4")
+            
+            # Initialize video writers
+            fourcc = cv2.VideoWriter_fourcc(*VIDEO_CODEC)
+            
+            if RECORD_CAMERA_FEED and self.camera_path:
+                self.camera_writer = cv2.VideoWriter(
+                    self.camera_path, fourcc, fps, (CAMERA_WIDTH, CAMERA_HEIGHT)
+                )
+                
+            if RECORD_OVERLAY_DISPLAY and self.overlay_path:
+                self.overlay_writer = cv2.VideoWriter(
+                    self.overlay_path, fourcc, fps, (SCREEN_WIDTH, SCREEN_HEIGHT)
+                )
+            
+            self.is_recording = True
+            print(f"Video recording started:")
+            if self.camera_path:
+                print(f"  Camera feed: {os.path.basename(self.camera_path)}")
+            if self.overlay_path:
+                print(f"  Overlay display: {os.path.basename(self.overlay_path)}")
+            
+            return self.camera_path, self.overlay_path
+            
+        except Exception as e:
+            print(f"Error starting video recording: {e}")
+            self.disable_recording()
+            return None, None
+    
+    def record_frame(self, camera_frame=None, overlay_frame=None):
+        """Record frames to video files"""
+        if not self.is_recording:
+            return
+            
+        try:
+            if camera_frame is not None and self.camera_writer and RECORD_CAMERA_FEED:
+                self.camera_writer.write(camera_frame)
+                
+            if overlay_frame is not None and self.overlay_writer and RECORD_OVERLAY_DISPLAY:
+                self.overlay_writer.write(overlay_frame)
+                
+        except Exception as e:
+            print(f"Error recording frame: {e}")
+            # Continue without recording rather than crash
+            
+    def stop_recording(self) -> dict:
+        """Stop recording and return metadata"""
+        if not self.is_recording:
+            return {}
+            
+        try:
+            # Stop recording flag
+            self.is_recording = False
+            
+            # Release video writers
+            if self.camera_writer:
+                self.camera_writer.release()
+                self.camera_writer = None
+                
+            if self.overlay_writer:
+                self.overlay_writer.release()
+                self.overlay_writer = None
+            
+            # Create metadata
+            metadata = {
+                'recording_ended': datetime.now().isoformat(),
+                'camera_feed_path': self.camera_path,
+                'overlay_display_path': self.overlay_path,
+                'fps': VIDEO_FPS,
+                'codec': VIDEO_CODEC,
+                'camera_resolution': f"{CAMERA_WIDTH}x{CAMERA_HEIGHT}",
+                'overlay_resolution': f"{SCREEN_WIDTH}x{SCREEN_HEIGHT}"
+            }
+            
+            # Save metadata file
+            if self.camera_path or self.overlay_path:
+                metadata_path = os.path.join(self.output_dir, f"video_metadata_{self.session_id}.json")
+                with open(metadata_path, 'w') as f:
+                    json.dump(metadata, f, indent=2)
+                print(f"Video metadata saved: {os.path.basename(metadata_path)}")
+            
+            print("Video recording stopped successfully")
+            return metadata
+            
+        except Exception as e:
+            print(f"Error stopping video recording: {e}")
+            return {}
+    
+    def disable_recording(self):
+        """Disable recording due to errors"""
+        self.is_recording = False
+        print("Video recording disabled due to errors")
 
 class TextReadingGazePredictor:
     """Enhanced gaze predictor with text reading analysis capabilities"""
@@ -71,6 +198,15 @@ class TextReadingGazePredictor:
         # Load model if provided
         if model_path:
             self.load_model(model_path)
+        
+        # Video recording initialization
+        if VIDEO_RECORDING_ENABLED:
+            session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            self.video_recorder = VideoRecorder(self.output_dir, session_timestamp)
+            self.recording_paths = None
+            self.video_metadata = None
+        else:
+            self.video_recorder = None
         
         # Initialize text pages
         self._create_text_pages()
@@ -1254,6 +1390,11 @@ class TextReadingGazePredictor:
         cv2.namedWindow('Text Reading Analysis', cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty('Text Reading Analysis', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         
+        # Start video recording
+        if self.video_recorder and VIDEO_RECORDING_ENABLED:
+            self.recording_paths = self.video_recorder.start_recording()
+            print("=" * 60)
+        
         self.session_start_time = time.time()
         frame_count = 0
         fps_start = time.time()
@@ -1265,6 +1406,10 @@ class TextReadingGazePredictor:
                     break
                 
                 frame = cv2.flip(frame, 1)  # Mirror image
+                
+                # Record camera frame
+                if self.video_recorder and RECORD_CAMERA_FEED:
+                    self.video_recorder.record_frame(camera_frame=frame)
                 
                 # Predict gaze point
                 prediction, pupil_size, blink_frequency = self._detect_face_and_predict(frame)
@@ -1292,6 +1437,10 @@ class TextReadingGazePredictor:
                     overlay = text_display.copy()
                     cv2.circle(overlay, (smoothed_x, smoothed_y), 12, (255, 0, 0), -1)
                     cv2.addWeighted(overlay, 0.6, text_display, 0.4, 0, text_display)
+                
+                # Record overlay frame (after all processing)
+                if self.video_recorder and RECORD_OVERLAY_DISPLAY:
+                    self.video_recorder.record_frame(overlay_frame=text_display)
                 
                 # Calculate and display FPS
                 frame_count += 1
@@ -1321,6 +1470,10 @@ class TextReadingGazePredictor:
         finally:
             cv2.destroyAllWindows()
             
+            # Stop video recording
+            if self.video_recorder and VIDEO_RECORDING_ENABLED:
+                self.video_metadata = self.video_recorder.stop_recording()
+            
             # Final data export
             print("\n" + "=" * 60)
             print("SESSION COMPLETE - EXPORTING DATA")
@@ -1330,6 +1483,16 @@ class TextReadingGazePredictor:
             if csv_file:
                 print(f"Eye movement data exported to: {csv_file}")
                 print("Data format matches your example CSV structure")
+            
+            # Display video recording information
+            if self.video_metadata:
+                print("\nVideo recordings saved:")
+                if self.video_metadata.get('camera_feed_path'):
+                    print(f"  Camera feed: {os.path.basename(self.video_metadata['camera_feed_path'])}")
+                if self.video_metadata.get('overlay_display_path'):
+                    print(f"  Overlay display: {os.path.basename(self.video_metadata['overlay_display_path'])}")
+                print(f"  Resolution: {self.video_metadata.get('camera_resolution', 'N/A')} (camera), {self.video_metadata.get('overlay_resolution', 'N/A')} (overlay)")
+                print(f"  FPS: {self.video_metadata.get('fps', 'N/A')}")
             
             print("Text Reading Analysis Complete!")
 

@@ -27,6 +27,19 @@ for directory in [CALIBRATION_DATA_DIR, MODELS_DIR, OUTPUT_DIR, USER_DATA_DIR]:
     os.makedirs(directory, exist_ok=True)
 
 # ============================================================================
+# VIDEO RECORDING SETTINGS
+# ============================================================================
+
+# Video Recording Configuration
+VIDEO_RECORDING_ENABLED = True
+VIDEO_FPS = 30
+VIDEO_CODEC = 'mp4v'  # H.264 compatible codec
+RECORD_CAMERA_FEED = True
+RECORD_OVERLAY_DISPLAY = True
+VIDEO_QUALITY = 80  # 0-100 quality setting
+VIDEO_BUFFER_SIZE = 30  # Maximum frames to buffer
+
+# ============================================================================
 # CALIBRATION SETTINGS
 # ============================================================================
 
