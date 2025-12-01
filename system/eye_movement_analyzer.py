@@ -37,8 +37,8 @@ class KalmanFilter:
         
         # Text reading mode parameters (same for LTR and RTL)
         self.P = np.eye(4) * 500   # Lower initial uncertainty for more responsive tracking
-        self.Q = np.eye(4) * 0.1  # Lower process noise for smoother reading patterns
-        self.R = np.eye(2) * 10    # Slightly higher measurement noise to reduce jitter
+        self.Q = np.eye(4) * 0.1  # Reduced process noise for smoother reading patterns (was 0.1)
+        self.R = np.eye(2) * 5    # Measurement noise (lower = more responsive)
             
         self.F = np.array([[1, 0, 1, 0],  # State transition model
                           [0, 1, 0, 1],
@@ -151,27 +151,54 @@ class EyeMovementAnalyzer:
         self.pupil_size_history = deque(maxlen=100)  # Store recent pupil sizes
         self.text_onset_time = None  # Time when text was first displayed
         
+        # Velocity Tracking for Adaptive Kalman Filter
+        self.last_raw_x = None
+        self.last_raw_y = None
+        self.last_timestamp = None
+        self.smoothed_velocity = 0.0
+        
     def add_gaze_point(self, x: float, y: float) -> GazePoint:
         """Add new gaze point and analyze movement"""
         current_time = time.time()
         
-        # Create gaze point
-        gaze_point = GazePoint(x=x, y=y, timestamp=current_time)
+        # 1. Calculate Smoothed Velocity from RAW data
+        # This detects intent to move without being fooled by filter lag or raw noise
+        raw_velocity = 0.0
+        if self.last_raw_x is not None and self.last_timestamp is not None:
+            dt = current_time - self.last_timestamp
+            if dt > 0:
+                dx = x - self.last_raw_x
+                dy = y - self.last_raw_y
+                dist = (dx**2 + dy**2)**0.5
+                raw_velocity = dist / dt
         
-        # Calculate velocity if we have previous points
-        if len(self.gaze_history) > 0:
-            prev_point = self.gaze_history[-1]
-            distance = self._calculate_distance(x, y, prev_point.x, prev_point.y)
-            time_delta = current_time - prev_point.timestamp
-            
-            if time_delta > 0:
-                velocity = distance / time_delta  # pixels per second
-                gaze_point.velocity = velocity
-                self.velocity_buffer.append(velocity)
+        # Update history
+        self.last_raw_x = x
+        self.last_raw_y = y
+        self.last_timestamp = current_time
         
-        # Update Kalman filter for prediction with adaptive parameters
-        self._adaptive_kalman_update(gaze_point)
+        # Apply EMA to velocity (Alpha 0.2 = smooths out noise spikes)
+        # If raw_velocity is noise (jitter), it fluctuates and averages low.
+        # If raw_velocity is reading, it stays consistent and average rises.
+        self.smoothed_velocity = 0.2 * raw_velocity + 0.8 * self.smoothed_velocity
+        
+        # Create gaze point object
+        gaze_point = GazePoint(x=x, y=y, timestamp=current_time, velocity=self.smoothed_velocity)
+        self.velocity_buffer.append(self.smoothed_velocity)
+        
+        # 2. Update Kalman Filter
+        # Predict step is required to maintain covariance
+        self.kalman_filter.predict()
         self.kalman_filter.update([x, y])
+        
+        # Use filtered position
+        filtered_pos = self.kalman_filter.state[:2]
+        if filtered_pos is not None:
+            gaze_point.x = filtered_pos[0]
+            gaze_point.y = filtered_pos[1]
+        
+        # 3. Update Adaptive Logic using SMOOTHED VELOCITY
+        self._adaptive_kalman_update(self.smoothed_velocity)
         
         # Detect fixations
         self._detect_fixation(gaze_point)
@@ -188,26 +215,17 @@ class EyeMovementAnalyzer:
         """Predict next gaze position using enhanced Kalman filter"""
         return self.kalman_filter.predict()
     
-    def _adaptive_kalman_update(self, current_point: GazePoint):
-        """Adaptively adjust Kalman filter parameters based on reading patterns"""
-        if len(self.gaze_history) < 5:  # Need some history for adaptation
-            return
-        
-        # Analyze recent movement pattern
-        recent_points = list(self.gaze_history)[-5:]
-        velocities = [point.velocity for point in recent_points if point.velocity > 0]
-        
-        if len(velocities) < 3:
-            return
-        
-        avg_velocity = sum(velocities) / len(velocities)
+    def _adaptive_kalman_update(self, velocity: float):
+        """Adaptively adjust Kalman filter parameters based on SMOOTHED velocity"""
+        # Use the smoothed velocity directly to determine the state
+        # This prevents noise from triggering 'saccade mode'
         
         # Adaptive parameter adjustment based on reading behavior
-        if avg_velocity < 50:  # Slow movement (fixation/careful reading)
+        if velocity < 50:  # Slow movement (fixation/careful reading)
             # Lower process noise for more stable predictions
-            self.kalman_filter.Q = np.eye(4) * 0.02
+            self.kalman_filter.Q = np.eye(4) * 0.005
             self.kalman_filter.reading_direction_bias = 0.5
-        elif avg_velocity > 200:  # Fast movement (saccades/scanning)
+        elif velocity > 200:  # Fast movement (saccades/scanning)
             # Higher process noise to respond quickly to changes
             self.kalman_filter.Q = np.eye(4) * 0.1
             self.kalman_filter.reading_direction_bias = 2.0
@@ -235,12 +253,24 @@ class EyeMovementAnalyzer:
                 self.current_fixation_position[0], self.current_fixation_position[1]
             )
             
-            if distance <= self.fixation_threshold_pixels:
+            # Check both distance AND velocity
+            # If velocity is high (>350), it's a saccade, not a fixation
+            # Increased threshold from 100 to 350 to be less harsh on noise
+            is_stable = (distance <= self.fixation_threshold_pixels) and (self.smoothed_velocity < 350)
+            
+            if is_stable:
                 # Still in fixation - update position (use centroid)
                 self.current_fixation_position = (
                     (self.current_fixation_position[0] + current_point.x) / 2,
                     (self.current_fixation_position[1] + current_point.y) / 2
                 )
+                
+                # Check if we are in a valid fixation (duration exceeded)
+                if self.current_fixation_start:
+                    fixation_duration = current_point.timestamp - self.current_fixation_start
+                    if fixation_duration >= self.fixation_min_duration:
+                        current_point.is_fixation = True
+                        
             else:
                 # Fixation ended - check if it was long enough
                 if self.current_fixation_start:
@@ -253,14 +283,35 @@ class EyeMovementAnalyzer:
                             self.current_fixation_start,
                             current_point.timestamp
                         )
-                        # Mark recent points as fixation
+                        # Mark recent points as fixation (retroactively)
                         for point in self.gaze_history:
                             if point.timestamp >= self.current_fixation_start:
                                 point.is_fixation = True
                 
-                # Start new potential fixation
-                self.current_fixation_start = current_point.timestamp
-                self.current_fixation_position = (current_point.x, current_point.y)
+                # Start new potential fixation ONLY if velocity is reasonably low
+                if self.smoothed_velocity < 350:
+                    self.current_fixation_start = current_point.timestamp
+                    self.current_fixation_position = (current_point.x, current_point.y)
+                else:
+                    self.current_fixation_start = None
+                    self.current_fixation_position = None
+    
+    def end_reading_session(self):
+        """End the current reading session and record any open fixation"""
+        if self.current_fixation_start and self.current_fixation_position:
+            current_time = time.time()
+            fixation_duration = current_time - self.current_fixation_start
+            
+            if fixation_duration >= self.fixation_min_duration:
+                self._record_fixation(
+                    self.current_fixation_position[0],
+                    self.current_fixation_position[1],
+                    self.current_fixation_start,
+                    current_time
+                )
+        
+        self.current_fixation_start = None
+        self.current_fixation_position = None
     
     def _record_fixation(self, x: float, y: float, start_time: float, end_time: float):
         """Record a completed fixation"""
@@ -494,9 +545,14 @@ Performance Assessment:
         # Clean the words when storing positions
         cleaned_positions = []
         for pos in word_positions:
-            cleaned_word = self.clean_hebrew_word(pos['word'])
-            # Only store positions for valid Hebrew words
-            if self.is_hebrew_word(cleaned_word):
+            # Try to clean if it's Hebrew, otherwise keep as is
+            if self.is_hebrew_word(pos['word']):
+                cleaned_word = self.clean_hebrew_word(pos['word'])
+            else:
+                cleaned_word = pos['word']
+                
+            # Store all words, not just Hebrew ones
+            if cleaned_word and cleaned_word.strip():
                 cleaned_pos = pos.copy()
                 cleaned_pos['word'] = cleaned_word
                 cleaned_positions.append(cleaned_pos)
@@ -528,10 +584,6 @@ Performance Assessment:
             if distance < word_threshold and distance < min_distance:
                 min_distance = distance
                 closest_word = word_info['word']
-        
-        # Words are already cleaned, but double-check for safety
-        if closest_word != "Unknown" and not self.is_hebrew_word(closest_word):
-            return "Unknown"
         
         return closest_word
     

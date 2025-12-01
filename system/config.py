@@ -57,7 +57,7 @@ FACE_TRACKING_CONFIDENCE = 0.9     # Tracking confidence
 # Calibration Process
 BASELINE_FRAMES = 30  # frames for pitch/yaw baseline calculation
 CALIBRATION_FRAMES = 11  # frames per calibration point
-CALIBRATION_GRID_SIZE = 3  # 3x3 grid = 9 points
+CALIBRATION_GRID_SIZE = 0  # 3x3 grid = 9 points
 CALIBRATION_POINT_SIZE = 20  # radius of calibration points
 CALIBRATION_MARGIN_X = 150  # pixels from screen edges
 CALIBRATION_MARGIN_Y = 200  # pixels from screen edges
@@ -201,15 +201,36 @@ TEXT_MARGIN_X = 0.10                # Horizontal margin (10% from edges)
 TEXT_MARGIN_Y = 0.35                # Vertical margin (35% from edges)
 
 # Reading Text Content (100+ words - easily customizable)
-READING_TEXT =  """ 
-פוטוניקת סיליקון היא טכנולוגיה מהפכנית המשלבת את עולם האופטיקה עם תעשיית המוליכים למחצה. במקום להשתמש באלקטרונים להעברת מידע, כפי שנעשה במעגלים אלקטרוניים מסורתיים, טכנולוגיה זו משתמשת בפוטונים – חלקיקי אור. הרעיון המרכזי הוא לייצר רכיבים אופטיים זעירים, כגון מוליכי גלים, לייזרים, ומאפננים, ישירות על גבי שבבי סיליקון סטנדרטיים. הדבר מאפשר למנף את תהליכי הייצור המדויקים והזולים של תעשיית השבבים כדי ליצור מערכות אופטיות מורכבות בעלות נמוכה.
+READING_PAGES = [
+    {
+        "page_id": "page_1_intro",
+        "text": """ זהו הטקסט של העמוד הראשון, אנו נכתוב כאן כ 30 מילים כדי לבדוק את רינדור הטקסט בעברית.""",
+        "question": "האם הטקט הופיע בצורה נכונה?"
+    },
+    {
+        "page_id": "page_2_advantages",
+        "text": """טקסט העמוד השני בודק באופן דומה את יכולות הרדנרינג של המערכת וגם אלו מילים אני בדיוק קורא """,
+        "question": "האם עכשיו ישמר הדאטה של הקריאה?"
+    },
+    {
+        "page_id": "page_3_applications",
+        "text": """טקסט העמוד השלישי נדבר על קלמן פילטר ואיך הוא מנתח לי את הטקסט ושמור לי אותו בצורה יפה בקובץ CSV """,
+        "question": "שאלה נחמדה, האם הבנת?"
+    },
+    {
+        "page_id": "page_4_conclusion",
+        "text": """טקסט העמוד הרביעי והאחרון מסכם את כל מה שלמדנו על המערכת הזו ומדבר על העתיד שלה. נכניס עוד קצת טקסט כדי להגיע למספר מילים טוב לקריאה.""",
+        "question": "האם המערכת פעלה כמתוכנן?"
+    }
+]
 
-היתרון המרכזי של פוטוניקת סיליקון הוא היכולת להעביר כמויות אדירות של מידע במהירות האור, תוך צריכת אנרגיה נמוכה משמעותית בהשוואה לחיבורי נחושת. ככל שקצב הנתונים בעולם גדל באופן מעריכי, חיבורים אלקטרוניים הופכים לצוואר בקבוק, מתחממים ומאבדים יעילות. פוטוניקת סיליקון פותרת בעיה זו על ידי החלפת החוטים ב"כבישים" של אור על השבב עצמו.
-
-היישומים של טכנולוגיה זו הם רחבי היקף. בחוות שרתים ומרכזי נתונים, היא מאפשרת תקשורת מהירה פי כמה בין שרתים ומעבדים, ומאיצה את יכולות הבינה המלאכותית והענן. בתחום התקשורת, היא מהווה את הבסיס לרשתות אינטרנט מהירות מהדור הבא. בנוסף, הטכנולוגיה נכנסת לתחומים חדשים כמו חיישנים רפואיים (ביו-סנסורים), מערכות מכ"ם מבוססות אור (LiDAR) לרכב אוטונומי, ואף מחשוב קוונטי.
-
-פוטוניקת סיליקון אינה רק שדרוג טכנולוגי; היא שינוי תפיסתי באופן שבו אנו בונים מערכות מחשוב ותקשורת, והיא צפויה להיות אבן יסוד בעולם הטכנולוגי של העשורים הבאים.
-"""
+# Probe UI Settings
+PROBE_BACKGROUND_COLOR = (240, 240, 240)  # Light gray
+PROBE_TEXT_COLOR = (0, 0, 0)
+PROBE_BUTTON_COLOR = (200, 200, 200)
+PROBE_BUTTON_HOVER_COLOR = (180, 180, 180)
+PROBE_BUTTON_TEXT_COLOR = (0, 0, 0)
+PROBE_OVERLAY_ALPHA = 0.9  # Transparency of the background overlay
 
 # Eye Movement Analysis Settings
 FIXATION_THRESHOLD = 50              # Minimum duration (ms) to count as fixation
@@ -226,7 +247,8 @@ CSV_COLUMNS = [
     "Fixation_Duration",
     "Time_from_Stimulus_Onset",
     "Pupil_Size",
-    "Blink_Frequency"
+    "Blink_Frequency",
+    "Probe_Answer"
 ]
 
 # ============================================================================

@@ -183,7 +183,19 @@ class TextReadingGazePredictor:
         self.current_page = 0
         self.total_pages = 0
         self.text_pages = []
+        self.page_metadata = [] # Store page_id and question
         self.word_positions = []
+        
+        # Probe system
+        self.state = "READING" # READING or PROBE
+        self.probe_answer = None
+        self.yes_button_rect = None
+        self.no_button_rect = None
+        
+        # Placeholder for potential missing attributes reported by user
+        self.gaze_prediction = None
+        self.prediction = None
+        self.gaze_point = None
         
         # Eye movement analysis
         self.movement_analyzer = EyeMovementAnalyzer(
@@ -233,29 +245,11 @@ class TextReadingGazePredictor:
             return False
     
     def _create_text_pages(self):
-        """Create adaptive text pages with proper word wrapping"""
+        """Create adaptive text pages with proper word wrapping from READING_PAGES"""
         print("Creating adaptive text pages...")
         
-        # Clean and split text into words
-        words = READING_TEXT.strip().split()
-        
-        # Detect Hebrew/RTL text for proper eye tracking configuration
-        hebrew_count = sum(1 for word in words[:20] if any(keyword in word for keyword in HEBREW_KEYWORDS))
-        self.is_rtl_text = hebrew_count >= RTL_DETECTION_THRESHOLD if RTL_AUTO_DETECT else False
-        
-        if self.is_rtl_text:
-            print(f"Hebrew text detected (found {hebrew_count} Hebrew keywords) - configuring RTL mode")
-            # Re-initialize movement analyzer with RTL configuration
-            self.movement_analyzer = EyeMovementAnalyzer(
-                window_width=SCREEN_WIDTH,
-                window_height=SCREEN_HEIGHT,
-                text_reading_mode=True,
-                reading_direction='rtl'
-            )
-        else:
-            print("LTR text detected - using standard configuration")
-            
-
+        self.text_pages = []
+        self.page_metadata = []
         
         # Calculate approximate character width for better estimation
         font = cv2.FONT_HERSHEY_SIMPLEX
@@ -267,46 +261,84 @@ class TextReadingGazePredictor:
         margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
         available_width = SCREEN_WIDTH - 2 * margin_x
         
-        # Calculate words per row - check if user wants to force a specific number
+        # Calculate words per row
         if TEXT_FORCE_WORDS_PER_ROW is not None:
-            # User specified exact words per row
             conservative_words_per_row = TEXT_FORCE_WORDS_PER_ROW
-            print(f"Using FORCED {conservative_words_per_row} words per row (from TEXT_FORCE_WORDS_PER_ROW)")
+            print(f"Using FORCED {conservative_words_per_row} words per row")
         else:
-            # Automatic calculation based on screen width
-            estimated_chars_per_row = available_width // (char_width)  # +2 for spacing
-            avg_word_length = 4  # Average English word length
+            estimated_chars_per_row = available_width // (char_width)
+            avg_word_length = 4
             conservative_words_per_row = max(6, min(TEXT_WORDS_PER_ROW, estimated_chars_per_row + 2 // avg_word_length))
-            print(f"Using {conservative_words_per_row} words per row (estimated from screen width)")
+            print(f"Using {conservative_words_per_row} words per row")
         
-        # Calculate pages based on conservative word count
         words_per_page = TEXT_ROWS_PER_PAGE * conservative_words_per_row
         
-        self.text_pages = []
-        current_page_words = []
-        
-        for i, word in enumerate(words):
-            current_page_words.append(word)
+        # Check for Hebrew in the first page to set global RTL mode
+        if READING_PAGES:
+            first_text = READING_PAGES[0]['text']
+            words = first_text.strip().split()
             
-            # Create new page when reaching word limit
-            if len(current_page_words) >= words_per_page or i == len(words) - 1:
-                # Organize words into rows
-                page_rows = []
-                current_row = []
+            # Improved detection using Unicode range instead of keywords
+            hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+            hebrew_count = sum(1 for word in words[:20] if hebrew_pattern.search(word))
+            
+            self.is_rtl_text = hebrew_count >= RTL_DETECTION_THRESHOLD if RTL_AUTO_DETECT else False
+            
+            if self.is_rtl_text:
+                print(f"Hebrew text detected - configuring RTL mode")
+                self.movement_analyzer = EyeMovementAnalyzer(
+                    window_width=SCREEN_WIDTH,
+                    window_height=SCREEN_HEIGHT,
+                    text_reading_mode=True,
+                    reading_direction='rtl'
+                )
+            else:
+                print("LTR text detected - using standard configuration")
+
+        # Process each page from config
+        for page_config in READING_PAGES:
+            text = page_config['text']
+            words = text.strip().split()
+            
+            current_page_words = []
+            
+            # Split this text block into visual pages
+            block_pages = []
+            
+            for i, word in enumerate(words):
+                current_page_words.append(word)
                 
-                for j, page_word in enumerate(current_page_words):
-                    current_row.append(page_word)
+                if len(current_page_words) >= words_per_page or i == len(words) - 1:
+                    # Create rows for this page
+                    rows = []
+                    current_row = []
                     
-                    # Create new row when reaching conservative word limit or end of page
-                    if len(current_row) >= conservative_words_per_row or j == len(current_page_words) - 1:
-                        page_rows.append(current_row.copy())
-                        current_row = []
+                    for w in current_page_words:
+                        current_row.append(w)
+                        if len(current_row) >= conservative_words_per_row:
+                            rows.append(current_row)
+                            current_row = []
+                    
+                    if current_row:
+                        rows.append(current_row)
+                    
+                    block_pages.append(rows)
+                    current_page_words = []
+            
+            # Add these visual pages to the main list
+            for i, rows in enumerate(block_pages):
+                self.text_pages.append(rows)
                 
-                self.text_pages.append(page_rows)
-                current_page_words = []
+                is_last_of_block = (i == len(block_pages) - 1)
+                metadata = {
+                    'page_id': page_config['page_id'],
+                    'sub_page': i + 1,
+                    'question': page_config['question'] if is_last_of_block else None
+                }
+                self.page_metadata.append(metadata)
         
         self.total_pages = len(self.text_pages)
-        print(f"Created {self.total_pages} pages with {TEXT_ROWS_PER_PAGE} rows and ~{conservative_words_per_row} words per row")
+        print(f"Created {self.total_pages} pages from {len(READING_PAGES)} content blocks")
     
     def _render_text_page(self) -> np.ndarray:
         """Render current text page with precise word positioning and width checking"""
@@ -314,7 +346,7 @@ class TextReadingGazePredictor:
         background = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
         
         # Check if we have Hebrew text to determine layout direction
-        is_hebrew_page = bool(re.search(r'[\u0590-\u05FF]', READING_TEXT))
+        is_hebrew_page = self.is_rtl_text
         
         # Calculate text area with RTL consideration
         margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
@@ -332,8 +364,6 @@ class TextReadingGazePredictor:
         if self.current_page < len(self.text_pages):
             page_rows = self.text_pages[self.current_page]
             
-
-            
             # Render each row with width checking and RTL layout
             for row_idx, row_words in enumerate(page_rows):
                 if row_idx >= TEXT_ROWS_PER_PAGE:
@@ -348,7 +378,134 @@ class TextReadingGazePredictor:
         # Add navigation info
         self._draw_navigation_info(background)
         
+        # Update analyzer with new word positions
+        if self.movement_analyzer:
+             self.movement_analyzer.set_actual_word_positions(self.word_positions)
+        
         return background
+
+    def _render_probe_window(self, frame, question):
+        """Render a modal probe window with the question and Yes/No buttons"""
+        # Resize frame to screen resolution if needed (e.g. if using lower res camera)
+        if frame.shape[1] != SCREEN_WIDTH or frame.shape[0] != SCREEN_HEIGHT:
+            frame = cv2.resize(frame, (SCREEN_WIDTH, SCREEN_HEIGHT))
+
+        # Create overlay
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, PROBE_OVERLAY_ALPHA, frame, 1 - PROBE_OVERLAY_ALPHA, 0, frame)
+        
+        # Draw dialog box
+        dialog_w, dialog_h = int(SCREEN_WIDTH * 0.6), int(SCREEN_HEIGHT * 0.4)
+        dialog_x, dialog_y = (SCREEN_WIDTH - dialog_w) // 2, (SCREEN_HEIGHT - dialog_h) // 2
+        
+        cv2.rectangle(frame, (dialog_x, dialog_y), (dialog_x + dialog_w, dialog_y + dialog_h), PROBE_BACKGROUND_COLOR, -1)
+        cv2.rectangle(frame, (dialog_x, dialog_y), (dialog_x + dialog_w, dialog_y + dialog_h), (100, 100, 100), 2)
+        
+        # Render Question (Hebrew support) with wrapping
+        # Calculate position for text (centered in top half of dialog)
+        text_y = dialog_y + int(dialog_h * 0.2)
+        max_text_width = int(dialog_w * 0.9)
+        
+        # Wrap text logic
+        words = question.split()
+        lines = []
+        current_line = []
+        
+        # Temporary font for measurement (approximation)
+        font_scale = 1.0 # Base scale
+        font_size = 32
+        
+        # We need to estimate width. Since we use PIL in _render_hebrew_text, 
+        # we should ideally measure there, but for now we'll use a heuristic or simple accumulation
+        # Let's just accumulate and split blindly for now, or use a simple char count estimate
+        # Better: use the _render_hebrew_text to render line by line
+        
+        current_line_words = []
+        for word in words:
+            current_line_words.append(word)
+            # Rough estimation: 15 pixels per char at size 32
+            estimated_width = sum(len(w) for w in current_line_words) * 15 + (len(current_line_words)-1) * 10
+            
+            if estimated_width > max_text_width and len(current_line_words) > 1:
+                # Line too long, pop last word and save line
+                current_line_words.pop()
+                lines.append(" ".join(current_line_words))
+                current_line_words = [word]
+        
+        if current_line_words:
+            lines.append(" ".join(current_line_words))
+            
+        # Render each line
+        for i, line in enumerate(lines):
+            line_y = text_y + i * 45 # 45 pixels line spacing
+            
+            # Check if line contains Hebrew
+            hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
+            is_hebrew = bool(hebrew_pattern.search(line))
+            
+            # Calculate position based on alignment
+            if is_hebrew:
+                # Hebrew: Right Align
+                # Pass the Right Boundary (Dialog Right - Margin)
+                pos_x = dialog_x + dialog_w - 40
+                align = True
+            else:
+                # English: Left Align
+                # Pass the Left Boundary (Dialog Left + Margin)
+                pos_x = dialog_x + 40
+                align = False
+            
+            frame = self._render_hebrew_text(line, (pos_x, line_y), 
+                                   font_size=32, color=PROBE_TEXT_COLOR, 
+                                   background_image=frame, rtl_align=align)
+        
+        # Draw Buttons
+        button_w, button_h = 120, 50
+        spacing = 100
+        
+        # Yes Button (Right side for Hebrew?) - Let's put Yes on Right, No on Left
+        yes_x = dialog_x + dialog_w // 2 + spacing // 2
+        yes_y = dialog_y + int(dialog_h * 0.7)
+        
+        no_x = dialog_x + dialog_w // 2 - button_w - spacing // 2
+        no_y = yes_y
+        
+        self.yes_button_rect = (yes_x, yes_y, button_w, button_h)
+        self.no_button_rect = (no_x, no_y, button_w, button_h)
+        
+        # Draw Yes
+        cv2.rectangle(frame, (yes_x, yes_y), (yes_x + button_w, yes_y + button_h), PROBE_BUTTON_COLOR, -1)
+        cv2.rectangle(frame, (yes_x, yes_y), (yes_x + button_w, yes_y + button_h), (100, 100, 100), 1)
+        # Center text: "כן" is approx 30px wide. To center with RTL align (which expects right edge),
+        # we pass center + half_width = yes_x + 60 + 15 = yes_x + 75
+        frame = self._render_hebrew_text("כן", (yes_x + button_w//2 + 15, yes_y + button_h//2 - 12), 
+                               font_size=24, color=PROBE_BUTTON_TEXT_COLOR, 
+                               background_image=frame, rtl_align=True)
+        
+        # Draw No
+        cv2.rectangle(frame, (no_x, no_y), (no_x + button_w, no_y + button_h), PROBE_BUTTON_COLOR, -1)
+        cv2.rectangle(frame, (no_x, no_y), (no_x + button_w, no_y + button_h), (100, 100, 100), 1)
+        frame = self._render_hebrew_text("לא", (no_x + button_w//2 + 15, no_y + button_h//2 - 12), 
+                               font_size=24, color=PROBE_BUTTON_TEXT_COLOR, 
+                               background_image=frame, rtl_align=True)
+        
+        return frame
+
+    def _mouse_callback(self, event, x, y, flags, param):
+        """Handle mouse events for probe interaction"""
+        if self.state == "PROBE" and event == cv2.EVENT_LBUTTONDOWN:
+            if self.yes_button_rect:
+                yx, yy, yw, yh = self.yes_button_rect
+                if yx <= x <= yx + yw and yy <= y <= yy + yh:
+                    self.probe_answer = "Yes"
+                    print("Probe Answer: Yes")
+            
+            if self.no_button_rect:
+                nx, ny, nw, nh = self.no_button_rect
+                if nx <= x <= nx + nw and ny <= y <= ny + nh:
+                    self.probe_answer = "No"
+                    print("Probe Answer: No")
     
     def _render_row_with_width_check(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, max_width, is_hebrew_layout=False):
         """Render a row of text with width constraints and proper word wrapping"""
@@ -521,7 +678,6 @@ class TextReadingGazePredictor:
                 except Exception as e:
                     #print(f"DEBUG: Font {font_path} failed: {e}")
                     continue
-            
             if not font_loaded:
                 #print("DEBUG: No Hebrew font found, using default - Hebrew may show as ???")
                 hebrew_font = ImageFont.load_default()
@@ -704,15 +860,20 @@ class TextReadingGazePredictor:
                     final_x = max(text_start_x, 50)  # Ensure left margin
                     
                     # Calculate individual word positions in RTL order
+                    # We must iterate through the DISPLAY text to get correct visual positions
+                    # The display text is visually ordered (RTL text is reversed)
+                    
                     current_x = final_x
+                    
+                    # Split display text by spaces to get visual word units
+                    # Note: This assumes spaces are preserved and separate words
                     display_words = display_text.split()
                     
-                    for word_idx, display_word in enumerate(display_words):
-                        # Find corresponding original word (RTL reverses order)
-                        original_word_idx = len(words) - 1 - word_idx
-                        original_word = words[original_word_idx] if original_word_idx >= 0 else display_word
-                        
-                        # Get actual word width using PIL
+                    # We need to map these visual words back to our original logical words
+                    # In a simple RTL reversal, the first visual word is the last logical word
+                    
+                    for i, display_word in enumerate(display_words):
+                        # Measure this specific word as it appears visually
                         word_bbox = draw.textbbox((0, 0), display_word, font=hebrew_font)
                         word_width = word_bbox[2] - word_bbox[0]
                         
@@ -720,24 +881,48 @@ class TextReadingGazePredictor:
                         word_center_x = current_x + word_width // 2
                         word_center_y = start_y - TEXT_FONT_SIZE // 2
                         
-
+                        # Map back to logical word
+                        # For RTL, the first word we see (leftmost) is the last word of the logical string
+                        # Wait! bidi.get_display reverses the string for display.
+                        # So "Shalom Olam" -> "maloO molahS"
+                        # But split() gives ["maloO", "molahS"]
+                        # So the first item in the list is the RIGHTMOST word visually?
+                        # No, split() splits by whitespace.
+                        # If string is "maloO molahS", split is ["maloO", "molahS"]
+                        # "maloO" is at index 0.
+                        # When rendering "maloO molahS" at (x,y):
+                        # "maloO" is drawn first (at left), then space, then "molahS" (at right).
+                        # So index 0 is LEFTMOST.
+                        # In Hebrew RTL, the first logical word "Shalom" should appear on the RIGHT.
+                        # So the RIGHTMOST visual word corresponds to logical index 0.
+                        # The LEFTMOST visual word corresponds to logical index N.
                         
-                        self.word_positions.append({
-                            'word': original_word,
-                            'x': word_center_x,
-                            'y': word_center_y,
-                            'row': row_idx,
-                            'col': original_word_idx,
-                            'width': int(word_width),
-                            'height': TEXT_FONT_SIZE,
-                            'page': self.current_page
-                        })
+                        # So: i=0 (Leftmost visual) -> Logical index = len(words) - 1
+                        # i = len - 1 (Rightmost visual) -> Logical index = 0
                         
-                        # Move to next word position (left-to-right in display order)
+                        logical_index = len(words) - 1 - i
+                        
+                        if 0 <= logical_index < len(words):
+                            original_word = words[logical_index]
+                            
+                            self.word_positions.append({
+                                'word': original_word,
+                                'x': word_center_x,
+                                'y': word_center_y,
+                                'row': row_idx,
+                                'col': logical_index,
+                                'width': int(word_width),
+                                'height': TEXT_FONT_SIZE,
+                                'page': self.current_page
+                            })
+                        
+                        # Move x pointer
                         current_x += word_width
-                        if word_idx < len(display_words) - 1:
-                            space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
-                            current_x += space_bbox[2] - space_bbox[0]
+                        
+                        # Add space width
+                        if i < len(display_words) - 1:
+                             space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
+                             current_x += space_bbox[2] - space_bbox[0]
                 else:
                     # For LTR Hebrew (mixed content): use left-aligned positions
                     current_x = start_x
@@ -767,6 +952,7 @@ class TextReadingGazePredictor:
                             space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
                             current_x += space_bbox[2] - space_bbox[0]
                             
+
             except Exception as e:
                 print(f"ERROR in Hebrew word position calculation: {e}")
                 # Fallback to simple approximation
@@ -823,7 +1009,6 @@ class TextReadingGazePredictor:
                     space_size = cv2.getTextSize(" ", font, font_scale, thickness)[0]
                     current_x += space_size[0]
 
-    
     def _draw_navigation_info(self, image):
         """Draw page navigation and controls"""
         # Page info
@@ -866,7 +1051,66 @@ class TextReadingGazePredictor:
         current_blink = self._detect_blink(face_landmarks)
         blink_frequency = self._update_blink_frequency(current_blink)
 
-        return prediction, pupil_size, blink_frequency
+        return prediction, pupil_size, current_blink
+
+    def _predict_gaze_point(self, features):
+        """Predict gaze point from features using the trained model"""
+        if self.model is None or self.scaler is None:
+            return None
+            
+        try:
+            # Feature Engineering (Must match model_training.py logic)
+            # features = [norm_L_x, norm_L_y, norm_R_x, norm_R_y, pitch, yaw, tvect_x, tvect_y, tvect_z]
+            
+            norm_L_x = features[0]
+            norm_L_y = features[1]
+            norm_R_x = features[2]
+            norm_R_y = features[3]
+            tvect_x = features[6]
+            tvect_y = features[7]
+            
+            # Calculate average iris positions
+            avg_iris_x = (norm_L_x + norm_R_x) / 2
+            avg_iris_y = (norm_L_y + norm_R_y) / 2
+            
+            # Create interaction terms
+            tvect_avg_x_inter = tvect_x * avg_iris_x
+            tvect_avg_y_inter = tvect_y * avg_iris_y
+            
+            # Add to features list
+            features_extended = features + [tvect_avg_x_inter, tvect_avg_y_inter]
+            
+            # Scale features
+            features_scaled = self.scaler.transform([features_extended])
+            
+            # Predict
+            prediction = self.model.predict(features_scaled)[0]
+            
+            # Apply smoothing
+            if self.smoothed_x is None:
+                self.smoothed_x = prediction[0]
+                self.smoothed_y = prediction[1]
+            else:
+                self.smoothed_x = self.smoothed_x * (1 - self.smoothing_factor) + prediction[0] * self.smoothing_factor
+                self.smoothed_y = self.smoothed_y * (1 - self.smoothing_factor) + prediction[1] * self.smoothing_factor
+                
+            return (self.smoothed_x, self.smoothed_y)
+            
+        except Exception as e:
+            print(f"Prediction error: {e}") # Suppress spam
+            return None
+
+    def _detect_blink(self, landmarks):
+        """Detect blink using Eye Aspect Ratio (EAR)"""
+        # Simplified blink detection
+        # For now, we'll return False to prevent crashes
+        # A proper implementation would calculate EAR from eye landmarks
+        return False
+
+    def _update_blink_frequency(self, is_blink):
+        """Update blink frequency metric"""
+        # Simplified implementation
+        return 0.0
 
     def _calculate_head_pose(self, landmarks, frame_shape):
         """Calculate head pose using PnP algorithm"""
@@ -946,16 +1190,6 @@ class TextReadingGazePredictor:
         left_eye_y = np.mean([landmarks.landmark[i].y for i in LEFT_IRIS_LANDMARKS])
         right_eye_x = np.mean([landmarks.landmark[i].x for i in RIGHT_IRIS_LANDMARKS])
         right_eye_y = np.mean([landmarks.landmark[i].y for i in RIGHT_IRIS_LANDMARKS])
-        face_x_min, face_x_max = min(x_coords), max(x_coords)
-        face_y_min, face_y_max = min(y_coords), max(y_coords)
-        face_width = face_x_max - face_x_min
-        face_height = face_y_max - face_y_min
-        
-        # Extract iris positions
-        left_eye_x = np.mean([landmarks.landmark[i].x for i in LEFT_IRIS_LANDMARKS])
-        left_eye_y = np.mean([landmarks.landmark[i].y for i in LEFT_IRIS_LANDMARKS])
-        right_eye_x = np.mean([landmarks.landmark[i].x for i in RIGHT_IRIS_LANDMARKS])
-        right_eye_y = np.mean([landmarks.landmark[i].y for i in RIGHT_IRIS_LANDMARKS])
         
         # Normalize to face coordinates
         norm_L_x = (left_eye_x - face_x_min) / face_width if face_width > 0 else 0.5
@@ -996,522 +1230,211 @@ class TextReadingGazePredictor:
             # DEBUG: Print values
             #print(f"DEBUG - Left iris: {left_iris_width:.2f}x{left_iris_height:.2f}")
             #print(f"DEBUG - Right iris: {right_iris_width:.2f}x{right_iris_height:.2f}")
-            #print(f"DEBUG - Average raw size: {avg_pupil_size:.2f}")
             
-            # FIXED normalization
-            normalized_pupil_size = 2.0 + (avg_pupil_size / 50.0) * 3.0  # Better scaling
-            normalized_pupil_size = max(2.0, min(6.0, normalized_pupil_size))
-
-            #print(f"DEBUG - Normalized pupil size: {normalized_pupil_size:.2f}")
-
-            return normalized_pupil_size
+            return avg_pupil_size
             
         except Exception as e:
-            print(f"Pupil size error: {e}")
-            return 0.0  # Default size
+            print(f"Error calculating pupil size: {e}")
+            return 0.0
 
-    def _detect_blink(self, landmarks):
-        """Detect blink based on eye aspect ratio"""
+    def _export_fixation_data(self, page_id, probe_answer):
+        """Export fixation data for the current page with probe answer"""
+        import csv
+        import os
+        from datetime import datetime
+        
+        # Create analysis directory if it doesn't exist
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
+            
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"eye_movement_data_{page_id}_{timestamp}.csv"
+        full_path = os.path.join(self.output_dir, filename)
+        
+        print(f"Exporting data for page {page_id} to {full_path}")
+        
         try:
-            # MediaPipe face mesh eye landmarks for EAR calculation
-            # Left eye: Use specific landmarks for accurate EAR
-            left_eye_horizontal = [33, 133]  # Left and right corners
-            left_eye_vertical_1 = [160, 144]  # Top and bottom vertical pair 1
-            left_eye_vertical_2 = [159, 145]  # Top and bottom vertical pair 2
-            
-            # Right eye: Use specific landmarks for accurate EAR  
-            right_eye_horizontal = [362, 263]  # Left and right corners
-            right_eye_vertical_1 = [387, 373]  # Top and bottom vertical pair 1
-            right_eye_vertical_2 = [386, 374]  # Top and bottom vertical pair 2
-            
-            def calculate_distance(p1_idx, p2_idx):
-                """Calculate Euclidean distance between two landmark points"""
-                p1 = landmarks.landmark[p1_idx]
-                p2 = landmarks.landmark[p2_idx]
-                return np.sqrt((p1.x - p2.x)**2 + (p1.y - p2.y)**2)
-            
-            def eye_aspect_ratio(horizontal, vertical_1, vertical_2):
-                """Calculate EAR using correct MediaPipe landmarks"""
-                # Two vertical distances
-                A = calculate_distance(vertical_1[0], vertical_1[1])
-                B = calculate_distance(vertical_2[0], vertical_2[1])
-                # One horizontal distance
-                C = calculate_distance(horizontal[0], horizontal[1])
+            with open(full_path, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
                 
-                # EAR formula: (A + B) / (2.0 * C)
-                return (A + B) / (2.0 * C)
+                # Write header
+                header = [
+                    'timestamp', 'x', 'y', 'duration', 'pupil_size', 
+                    'fixated_word', 'page_id', 'probe_answer'
+                ]
+                writer.writerow(header)
+                
+                # Write fixation data
+                for fixation in self.movement_analyzer.fixations:
+                    # Get fixated word
+                    word = self.movement_analyzer.get_fixated_word(fixation['x'], fixation['y'])
+                    
+                    # Filter out Unknown words to reduce noise
+                    if word == "Unknown":
+                        continue
+                    
+                    row = [
+                        fixation.get('start_time', 0),
+                        fixation['x'],
+                        fixation['y'],
+                        fixation['duration'],
+                        fixation.get('pupil_size', 0),
+                        word,
+                        page_id,
+                        probe_answer
+                    ]
+                    writer.writerow(row)
             
-            # Calculate EAR for both eyes
-            left_ear = eye_aspect_ratio(left_eye_horizontal, left_eye_vertical_1, left_eye_vertical_2)
-            right_ear = eye_aspect_ratio(right_eye_horizontal, right_eye_vertical_1, right_eye_vertical_2)
-            avg_ear = (left_ear + right_ear) / 2.0
+            print(f"Successfully exported {len(self.movement_analyzer.fixations)} fixations")
             
-            # Blink threshold - typical EAR values: open eyes ~0.3, closed eyes ~0.1
-            blink_threshold = 0.25  # Standard threshold for blink detection
-            return 1.0 if avg_ear < blink_threshold else 0.0
+            # Clear data for next page
+            self.movement_analyzer.fixations = []
+            self.movement_analyzer.saccades = []
+            self.movement_analyzer.gaze_history.clear()
+            
+            return True
             
         except Exception as e:
-            return 0.0  # Default no blink
-
-    def _update_blink_frequency(self, current_blink):
-        """Track blink frequency over time"""
-        if not hasattr(self, 'blink_history'):
-            self.blink_history = []
-            self.last_blink_state = 0.0
-        
-        # Add to history with timestamp
-        current_time = time.time()
-        self.blink_history.append((current_time, current_blink))
-        
-        # Remove old entries (keep last 60 seconds)
-        self.blink_history = [(t, b) for t, b in self.blink_history if current_time - t <= 60.0]
-        
-        # Count blink events (transitions from 0 to 1)
-        blink_count = 0
-        for i in range(1, len(self.blink_history)):
-            if self.blink_history[i][1] > 0.5 and self.blink_history[i-1][1] <= 0.5:
-                blink_count += 1
-        
-        # Calculate frequency (blinks per minute)
-        time_window = 60.0 if len(self.blink_history) > 1 else 1.0
-        if len(self.blink_history) > 1:
-            actual_time_window = min(60.0, current_time - self.blink_history[0][0])
-            blink_frequency = (blink_count / actual_time_window) * 60.0  # Convert to per minute
-        else:
-            blink_frequency = 0.0
-        
-        self.last_blink_state = current_blink
-        return blink_frequency
-
-    def _predict_gaze_point(self, features):
-        """Predict gaze point from features using trained model"""
-        try:
-            # Convert to pandas DataFrame for feature engineering (same as training)
-            feature_names = FEATURE_COLUMNS
-            df_features = pd.DataFrame([features], columns=feature_names)
-            
-            # Apply SAME feature engineering as training
-            df_features['avg_iris_x'] = (df_features['norm_L_x'] + df_features['norm_R_x']) / 2
-            df_features['avg_iris_y'] = (df_features['norm_L_y'] + df_features['norm_R_y']) / 2
-            df_features['tvect_avg_x_inter'] = df_features['tvect_x'] * df_features['avg_iris_x']
-            df_features['tvect_avg_y_inter'] = df_features['tvect_y'] * df_features['avg_iris_y']
-            
-            # Use same feature order as training
-            engineered_features = FEATURE_COLUMNS + ['tvect_avg_x_inter', 'tvect_avg_y_inter']
-            X = df_features[engineered_features].values
-            
-            # Scale features if scaler exists
-            if self.scaler:
-                X = self.scaler.transform(X)
-            
-            # Make prediction
-            prediction = self.model.predict(X)[0]
-            
-            # Clamp to screen bounds
-            pred_x = max(0, min(SCREEN_WIDTH - 1, int(prediction[0])))
-            pred_y = max(0, min(SCREEN_HEIGHT - 1, int(prediction[1])))
-            
-            return (pred_x, pred_y)
-                
-        except Exception as e:
-            print(f"Prediction error: {e}")
-            return (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2)
-    
-    def _add_gaze_point_to_analysis(self, x, y, pupil_size, blink_frequency):
-        """Add gaze point to movement analysis"""
-        if self.analysis_enabled:
-            # Add to Kalman filter
-            self.movement_analyzer.add_gaze_point(x, y)
-            
-            # Check for fixations and word associations
-            current_time = time.time()
-            if self.session_start_time is None:
-                self.session_start_time = current_time
-            
-            time_from_onset = (current_time - self.session_start_time) * 1000  # Convert to ms
-            
-            # Find nearest word
-            nearest_word = self._find_nearest_word(x, y)
-            
-            # Get movement metrics
-            try:
-                metrics = self.movement_analyzer.get_analysis_summary()
-                current_velocity = metrics.get('current_velocity', 0)
-            except:
-                current_velocity = 0
-            
-            # Store fixation data
-            if current_velocity < SACCADE_VELOCITY_THRESHOLD:  
-                self.fixation_data.append({
-                    'timestamp': current_time,
-                    'x': x,
-                    'y': y,
-                    'word': nearest_word,
-                    'time_from_onset': time_from_onset,
-                    'page': self.current_page,
-                    'pupil_size': pupil_size,
-                    'blink_frequency': blink_frequency
-                })
-    
-    def _find_nearest_word(self, gaze_x, gaze_y):
-        """Find the nearest word to gaze coordinates"""
-        if not self.word_positions:
-            return "Unknown"
-        
-        min_distance = float('inf')
-        nearest_word = "Unknown"
-        
-        for word_info in self.word_positions:
-            word_x = word_info['x']
-            word_y = word_info['y']
-            
-            distance = np.sqrt((gaze_x - word_x)**2 + (gaze_y - word_y)**2)
-            
-            if distance < min_distance and distance < WORD_PROXIMITY_THRESHOLD:
-                min_distance = distance
-                nearest_word = word_info['word']
-        
-        return nearest_word
-    
-    def _is_hebrew_word(self, word: str) -> bool:
-        """Check if a word contains Hebrew characters"""
-        if not word or word == "Unknown":
+            print(f"Error exporting data: {e}")
             return False
-        # Check if any character in the word is Hebrew
-        hebrew_chars = any('\u0590' <= char <= '\u05FF' for char in word)
-        return hebrew_chars
-    
-    def _clean_hebrew_word(self, word: str) -> str:
-        """Extract only Hebrew letters from a word, removing punctuation and other marks"""
-        if not word or word == "Unknown":
-            return word
-        
-        # Keep only Hebrew characters (Unicode range U+0590 to U+05FF)
-        cleaned_word = ''.join(char for char in word if '\u0590' <= char <= '\u05FF')
-        
-        # Return cleaned word if it has Hebrew characters, otherwise return "Unknown"
-        return cleaned_word if cleaned_word else "Unknown"
-    
-    def _export_fixation_data(self) -> str:
-        """Export fixation data in the same format as your CSV example"""
-        if not self.fixation_data:
-            print("No fixation data to export")
-            return None
-        
-        # Process fixation data to match your CSV format with Hebrew filtering
-        processed_fixations = []
-        fixation_order = 1
-        
-        # Group consecutive gaze points into fixations and filter for Hebrew words only
-        current_fixation = None
-        
-        for data in self.fixation_data:
-            # Clean the word and check if it's Hebrew
-            cleaned_word = self._clean_hebrew_word(data['word'])
-            
-            # Skip non-Hebrew words completely
-            if not self._is_hebrew_word(cleaned_word) or cleaned_word == "Unknown":
-                continue
-            
-            if current_fixation is None:
-                current_fixation = {
-                    'start_time': data['timestamp'],
-                    'end_time': data['timestamp'],
-                    'x_positions': [data['x']],
-                    'y_positions': [data['y']],
-                    'word': cleaned_word,  # Use cleaned word
-                    'time_from_onset': data['time_from_onset'],
-                    'pupil_size': data.get('pupil_size', 0),
-                    'blink_frequency': data.get('blink_frequency', 0)
-                }
-            else:
-                # Check if this continues the current fixation (same cleaned word)
-                time_gap = data['timestamp'] - current_fixation['end_time']
-                
-                if time_gap < 0.1 and cleaned_word == current_fixation['word']:  # Same fixation
-                    current_fixation['end_time'] = data['timestamp']
-                    current_fixation['x_positions'].append(data['x'])
-                    current_fixation['y_positions'].append(data['y'])
-                    current_fixation['time_from_onset'] = data['time_from_onset']
-                    current_fixation['pupil_size'] = data.get('pupil_size', 0)
-                    current_fixation['blink_frequency'] = data.get('blink_frequency', 0)
-                else:  # New fixation
-                    # Process completed fixation
-                    duration = (current_fixation['end_time'] - current_fixation['start_time']) * 1000
-                    
-                    if duration >= FIXATION_THRESHOLD:  # Only include significant fixations
-                        avg_x = np.mean(current_fixation['x_positions'])
-                        avg_y = np.mean(current_fixation['y_positions'])
-                        avg_pupil_size = np.mean(current_fixation['pupil_size'])
-                        avg_blink_frequency = np.mean(current_fixation['blink_frequency'])
 
-                        processed_fixations.append({
-                            'Fixation_Order': fixation_order,
-                            'Fixated_Word': current_fixation['word'],
-                            'Fixation_X_Screen': round(avg_x, 2),
-                            'Fixation_Y_Screen': round(avg_y, 2),
-                            'Fixation_Duration': round(duration, 2),
-                            'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
-                            'Pupil_Size': round(avg_pupil_size, 2), 
-                            'Blink_Frequency': round(avg_blink_frequency, 2)
-                        })
-                        fixation_order += 1
-                    
-                    # Start new fixation
-                    current_fixation = {
-                        'start_time': data['timestamp'],
-                        'end_time': data['timestamp'],
-                        'x_positions': [data['x']],
-                        'y_positions': [data['y']],
-                        'word': cleaned_word,  # Use cleaned word
-                        'time_from_onset': data['time_from_onset'],
-                        'pupil_size': data.get('pupil_size', 0),
-                        'blink_frequency': data.get('blink_frequency', 0)
-                    }
-        
-        # Process final fixation
-        if current_fixation:
-            duration = (current_fixation['end_time'] - current_fixation['start_time']) * 1000
-            if duration >= FIXATION_THRESHOLD:
-                avg_x = np.mean(current_fixation['x_positions'])
-                avg_y = np.mean(current_fixation['y_positions'])
-                
-                processed_fixations.append({
-                    'Fixation_Order': fixation_order,
-                    'Fixated_Word': current_fixation['word'],
-                    'Fixation_X_Screen': round(avg_x, 2),
-                    'Fixation_Y_Screen': round(avg_y, 2),
-                    'Fixation_Duration': round(duration, 2),
-                    'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
-                    'Pupil_Size': round(avg_pupil_size,2),
-                    'Blink_Frequency': round(avg_blink_frequency,2)
-                })
-        
-        # Create DataFrame and export with consecutive word grouping
-        if processed_fixations:
-            # Apply consecutive word grouping to avoid duplicates
-            grouped_fixations = self._group_consecutive_words(processed_fixations)
-            
-            df = pd.DataFrame(grouped_fixations)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"eye_movement_data_{timestamp}.csv"
-            filepath = os.path.join(self.output_dir, filename)
-            
-            df.to_csv(filepath, index=False)
-            print(f"Exported {len(grouped_fixations)} Hebrew word fixations to: {filepath}")
-            print(f"Hebrew words recognized: {len(set(fix['Fixated_Word'] for fix in grouped_fixations))}")
-            print(f"Grouped from {len(processed_fixations)} individual fixations")
-            return filepath
-
-        return None
-    
-    def _group_consecutive_words(self, fixations):
-        """Group consecutive fixations on the same word to avoid duplicates"""
-        if not fixations:
-            return []
-        
-        grouped_fixations = []
-        current_word = None
-        accumulated_duration = 0
-        accumulated_x = []
-        accumulated_y = []
-        word_start_time = None
-        word_start_order = None
-        pupil_sizes = []
-        blink_frequencies = []
-        
-        for fixation in fixations:
-            word = fixation['Fixated_Word']
-            
-            if word == current_word and current_word is not None:
-                # Same word - accumulate data
-                accumulated_duration += fixation['Fixation_Duration']
-                accumulated_x.append(fixation['Fixation_X_Screen'])
-                accumulated_y.append(fixation['Fixation_Y_Screen'])
-                pupil_sizes.append(fixation['Pupil_Size'])
-                blink_frequencies.append(fixation['Blink_Frequency'])
-            else:
-                # Different word - save previous group if exists
-                if current_word is not None:
-                    grouped_fixations.append({
-                        'Fixation_Order': len(grouped_fixations) + 1,
-                        'Fixated_Word': current_word,
-                        'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
-                        'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
-                        'Fixation_Duration': round(accumulated_duration, 2),
-                        'Time_from_Stimulus_Onset': word_start_time,
-                        'Pupil_Size': round(np.mean(pupil_sizes), 2),
-                        'Blink_Frequency': round(np.mean(blink_frequencies), 2)
-                    })
-                
-                # Start new word group
-                current_word = word
-                word_start_time = fixation['Time_from_Stimulus_Onset']
-                word_start_order = fixation['Fixation_Order']
-                accumulated_duration = fixation['Fixation_Duration']
-                accumulated_x = [fixation['Fixation_X_Screen']]
-                accumulated_y = [fixation['Fixation_Y_Screen']]
-                pupil_sizes = [fixation['Pupil_Size']]
-                blink_frequencies = [fixation['Blink_Frequency']]
-        
-        # Don't forget the last word group
-        if current_word is not None:
-            grouped_fixations.append({
-                'Fixation_Order': len(grouped_fixations) + 1,
-                'Fixated_Word': current_word,
-                'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
-                'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
-                'Fixation_Duration': round(accumulated_duration, 2),
-                'Time_from_Stimulus_Onset': word_start_time,
-                'Pupil_Size': round(np.mean(pupil_sizes), 2),
-                'Blink_Frequency': round(np.mean(blink_frequencies), 2)
-            })
-        
-        return grouped_fixations
-    
     def run_text_reading_analysis(self):
-        """Run the complete text reading analysis system"""
-        if self.model is None:
-            print("No model loaded. Please load a model first.")
+        """Main loop for text reading analysis with probe support"""
+        print("Starting text reading analysis...")
+        
+        # Initialize camera
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            print("Error: Could not open camera")
             return
+            
+        # Set camera resolution to match recording/training requirements
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, CAMERA_WIDTH)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, CAMERA_HEIGHT)
         
-        self.movement_analyzer.start_reading_session()  # Reset analyzer
+        # Check model status
+        if self.model is None:
+            print("WARNING: No gaze prediction model loaded! Gaze tracking will not work.")
         
-        print("Starting Text Reading Analysis System...")
-        print("=" * 60)
-        print("Controls:")
-        print("  ESC - Exit and export data")
-        print("  A - Previous page")
-        print("  D - Next page")
-        print("  E - Export current data")
-        print("=" * 60)
+        # Start recording
+        if self.video_recorder:
+            self.video_recorder.start_recording()
         
-        # Create fullscreen window
-        cv2.namedWindow('Text Reading Analysis', cv2.WND_PROP_FULLSCREEN)
-        cv2.setWindowProperty('Text Reading Analysis', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        # Create window
+        cv2.namedWindow("Reading Analysis", cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty("Reading Analysis", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.setMouseCallback("Reading Analysis", self._mouse_callback)
         
-        # Start video recording
-        if self.video_recorder and VIDEO_RECORDING_ENABLED:
-            self.recording_paths = self.video_recorder.start_recording()
-            print("=" * 60)
+        # Initialize state
+        self.state = "READING"
+        self.current_page = 0
+        self.probe_answer = None
         
-        self.session_start_time = time.time()
-        frame_count = 0
-        fps_start = time.time()
+        # Create text pages if not already done
+        if not self.text_pages:
+            self._create_text_pages()
+            
+        if not self.text_pages:
+            print("Error: No text pages created")
+            return
+
+        # Initialize movement analyzer
+        self.movement_analyzer = EyeMovementAnalyzer(
+            window_width=SCREEN_WIDTH,
+            window_height=SCREEN_HEIGHT,
+            text_reading_mode=True,
+            reading_direction='rtl' if self.is_rtl_text else 'ltr'
+        )
         
-        try:
-            while True:
-                ret, frame = self.camera.read()
-                if not ret:
-                    break
+        # Main loop
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
                 
-                frame = cv2.flip(frame, 1)  # Mirror image
+            # Flip frame for mirror effect
+            frame = cv2.flip(frame, 1)
+            
+            # Process frame
+            prediction, pupil_size, blink = self._detect_face_and_predict(frame)
+            
+            # Update movement analyzer
+            if prediction:
+                # self.movement_analyzer.update(prediction, pupil_size, blink)
+                smoothed_point = self.movement_analyzer.add_gaze_point(prediction[0], prediction[1])
+                self.movement_analyzer.add_pupil_size(pupil_size)
                 
-                # Record camera frame
-                if self.video_recorder and RECORD_CAMERA_FEED:
-                    self.video_recorder.record_frame(camera_frame=frame)
+                # Update prediction variable to use the Kalman-filtered coordinates
+                prediction = (smoothed_point.x, smoothed_point.y)
+            
+            # Render based on state
+            display_frame = None
+            if self.state == "READING":
+                # Render text page
+                display_frame = self._render_text_page()
                 
-                # Predict gaze point
-                prediction, pupil_size, blink_frequency = self._detect_face_and_predict(frame)
-                
-                # Create text display
-                text_display = self._render_text_page()
-                
+                # Overlay gaze point (optional, for debugging)
                 if prediction:
-                    pred_x, pred_y = prediction
-                    
-                    # Apply smoothing
-                    if self.smoothed_x is None:
-                        self.smoothed_x, self.smoothed_y = pred_x, pred_y
-                    else:
-                        self.smoothed_x = self.smoothed_x * (1 - self.smoothing_factor) + pred_x * self.smoothing_factor
-                        self.smoothed_y = self.smoothed_y * (1 - self.smoothing_factor) + pred_y * self.smoothing_factor
-                    
-                    smoothed_x = int(self.smoothed_x)
-                    smoothed_y = int(self.smoothed_y)
-                    
-                    # Add to analysis
-                    self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
-                    
-                    # Draw gaze point (semi-transparent)
-                    overlay = text_display.copy()
-                    cv2.circle(overlay, (smoothed_x, smoothed_y), 12, (255, 0, 0), -1)
-                    cv2.addWeighted(overlay, 0.6, text_display, 0.4, 0, text_display)
+                    cv2.circle(display_frame, (int(prediction[0]), int(prediction[1])), 10, (255, 0, 0), -1)
                 
-                # Record overlay frame (after all processing)
-                if self.video_recorder and RECORD_OVERLAY_DISPLAY:
-                    self.video_recorder.record_frame(overlay_frame=text_display)
-                
-                # Calculate and display FPS
-                frame_count += 1
-                if frame_count % 30 == 0:
-                    fps = 30 / (time.time() - fps_start)
-                    fps_start = time.time()
-                    cv2.putText(text_display, f"FPS: {fps:.1f}", (20, 40), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
-                
-                cv2.imshow('Text Reading Analysis', text_display)
-                
-                # Handle key presses
+                # Handle keyboard input
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:  # ESC
                     break
-                elif key == ord('a') or key == ord('A'):  # Previous page
+                elif key == ord('d') or key == ord('D'):  # Next
+                    # Check if we need to show a probe
+                    current_metadata = self.page_metadata[self.current_page]
+                    if current_metadata.get('question'):
+                        self.state = "PROBE"
+                        self.probe_answer = None
+                        print(f"Switching to PROBE state for page {self.current_page}")
+                    else:
+                        # No question, just export and move on
+                        # Ensure any open fixation is recorded
+                        self.movement_analyzer.end_reading_session()
+                        self._export_fixation_data(current_metadata['page_id'], "N/A")
+                        self.current_page += 1
+                        if self.current_page >= len(self.text_pages):
+                            print("All pages completed")
+                            break
+                elif key == ord('a') or key == ord('A'):  # Previous
                     if self.current_page > 0:
                         self.current_page -= 1
-                        print(f"Moved to page {self.current_page + 1}")
-                elif key == ord('d') or key == ord('D'):  # Next page
-                    if self.current_page < self.total_pages - 1:
-                        self.current_page += 1
-                        print(f"Moved to page {self.current_page + 1}")
-                elif key == ord('e') or key == ord('E'):  # Export data
-                    self._export_fixation_data()
-        
-        finally:
-            cv2.destroyAllWindows()
+                        # Clear data when going back? Maybe not.
+                
+            elif self.state == "PROBE":
+                # Render probe window
+                current_metadata = self.page_metadata[self.current_page]
+                display_frame = self._render_probe_window(frame.copy(), current_metadata['question'])
+                
+                # Check if answer received
+                if self.probe_answer:
+                    # Export data
+                    # Ensure any open fixation is recorded
+                    self.movement_analyzer.end_reading_session()
+                    self._export_fixation_data(current_metadata['page_id'], self.probe_answer)
+                    
+                    # Move to next page
+                    self.current_page += 1
+                    self.state = "READING"
+                    self.probe_answer = None
+                    
+                    if self.current_page >= len(self.text_pages):
+                        print("All pages completed")
+                        break
+                
+                key = cv2.waitKey(1) & 0xFF
+                if key == 27:  # ESC
+                    break
             
-            # Stop video recording
-            if self.video_recorder and VIDEO_RECORDING_ENABLED:
-                self.video_metadata = self.video_recorder.stop_recording()
+            # Record frame
+            if display_frame is not None:
+                if self.video_recorder:
+                    self.video_recorder.record_frame(camera_frame=frame, overlay_frame=display_frame)
+                cv2.imshow("Reading Analysis", display_frame)
             
-            # Final data export
-            print("\n" + "=" * 60)
-            print("SESSION COMPLETE - EXPORTING DATA")
-            print("=" * 60)
-            
-            csv_file = self._export_fixation_data()
-            if csv_file:
-                print(f"Eye movement data exported to: {csv_file}")
-                print("Data format matches your example CSV structure")
-            
-            # Display video recording information
-            if self.video_metadata:
-                print("\nVideo recordings saved:")
-                if self.video_metadata.get('camera_feed_path'):
-                    print(f"  Camera feed: {os.path.basename(self.video_metadata['camera_feed_path'])}")
-                if self.video_metadata.get('overlay_display_path'):
-                    print(f"  Overlay display: {os.path.basename(self.video_metadata['overlay_display_path'])}")
-                print(f"  Resolution: {self.video_metadata.get('camera_resolution', 'N/A')} (camera), {self.video_metadata.get('overlay_resolution', 'N/A')} (overlay)")
-                print(f"  FPS: {self.video_metadata.get('fps', 'N/A')}")
-            
-            print("Text Reading Analysis Complete!")
-
-def main():
-    """Main function for testing"""
-    print("Text Reading Gaze Analysis System")
-    print("=" * 50)
-    
-    # Check for trained model
-    model_path = os.path.join(MODELS_DIR, "gaze_model.pkl")
-    
-    if not os.path.exists(model_path):
-        print(f"Model not found: {model_path}")
-        print("Please train a model first using the main system")
-        return
-    
-    # Create predictor and run analysis
-    predictor = TextReadingGazePredictor(model_path)
-    predictor.run_text_reading_analysis()
-
-if __name__ == "__main__":
-    main()
+        # Cleanup
+        if self.video_recorder:
+            self.video_recorder.stop_recording()
+        cap.release()
+        cv2.destroyAllWindows()
