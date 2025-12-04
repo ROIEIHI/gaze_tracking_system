@@ -154,7 +154,25 @@ class TextReadingGazePredictor:
         print("Initializing Text Reading Gaze Predictor...")
         
         # Set output directory
-        self.output_dir = output_dir if output_dir is not None else OUTPUT_DIR
+        # Set output directory structure
+        base_output_dir = output_dir if output_dir is not None else USER_DATA_DIR
+        
+        # Generate session timestamp
+        self.session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        session_dir_name = f"session_{self.session_timestamp}"
+        
+        # Create session directories
+        self.session_dir = os.path.join(base_output_dir, session_dir_name)
+        self.analysis_dir = os.path.join(self.session_dir, "analysis")
+        self.recordings_dir = os.path.join(self.session_dir, "recordings")
+        
+        # Ensure directories exist
+        os.makedirs(self.analysis_dir, exist_ok=True)
+        os.makedirs(self.recordings_dir, exist_ok=True)
+        
+        # Set main output dir to analysis for CSV exports
+        self.output_dir = self.analysis_dir
+        print(f"Session directory created: {self.session_dir}")
         
         # MediaPipe setup
         self.mp_face_mesh = mp.solutions.face_mesh
@@ -201,15 +219,32 @@ class TextReadingGazePredictor:
         
         # Video recording initialization
         if VIDEO_RECORDING_ENABLED:
-            session_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            self.video_recorder = VideoRecorder(self.output_dir, session_timestamp)
+            # Use the recordings directory and existing timestamp
+            self.video_recorder = VideoRecorder(self.recordings_dir, self.session_timestamp)
             self.recording_paths = None
             self.video_metadata = None
         else:
             self.video_recorder = None
         
         # Initialize text pages
-        self._create_text_pages()
+        self.reading_sequence = []
+        self.probe_answers = {}
+        self._create_reading_sequence()
+        
+        # Mouse state for probes
+        self.mouse_x = 0
+        self.mouse_y = 0
+        self.mouse_clicked = False
+        
+    def _mouse_callback(self, event, x, y, flags, param):
+        """Handle mouse events for probe interaction"""
+        if event == cv2.EVENT_MOUSEMOVE:
+            self.mouse_x = x
+            self.mouse_y = y
+        elif event == cv2.EVENT_LBUTTONDOWN:
+            self.mouse_x = x
+            self.mouse_y = y
+            self.mouse_clicked = True
     
     def load_model(self, model_path: str) -> bool:
         """Load trained model and scaler"""
@@ -232,124 +267,181 @@ class TextReadingGazePredictor:
             print(f"Failed to load model: {e}")
             return False
     
-    def _create_text_pages(self):
-        """Create adaptive text pages with proper word wrapping"""
-        print("Creating adaptive text pages...")
+    def _create_reading_sequence(self):
+        """Create sequence of text pages and probes based on config"""
+        print("Creating reading sequence from config...")
         
-        # Clean and split text into words
-        words = READING_TEXT.strip().split()
+        self.reading_sequence = []
+        self.total_pages = 0
         
-        # Detect Hebrew/RTL text for proper eye tracking configuration
-        hebrew_count = sum(1 for word in words[:20] if any(keyword in word for keyword in HEBREW_KEYWORDS))
-        self.is_rtl_text = hebrew_count >= RTL_DETECTION_THRESHOLD if RTL_AUTO_DETECT else False
+        # Get sorted page IDs
+        page_ids = sorted(PAGES.keys())
         
-        if self.is_rtl_text:
-            print(f"Hebrew text detected (found {hebrew_count} Hebrew keywords) - configuring RTL mode")
-            # Re-initialize movement analyzer with RTL configuration
-            self.movement_analyzer = EyeMovementAnalyzer(
-                window_width=SCREEN_WIDTH,
-                window_height=SCREEN_HEIGHT,
-                text_reading_mode=True,
-                reading_direction='rtl'
-            )
-        else:
-            print("LTR text detected - using standard configuration")
+        for page_id in page_ids:
+            text = PAGES[page_id]
             
-
-        
-        # Calculate approximate character width for better estimation
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = TEXT_FONT_SIZE / 32.0  # Match the rendering scale
-        thickness = 4 if TEXT_FONT_BOLD else 2
-        
-        # Test character to estimate average character width
-        char_width = cv2.getTextSize("A", font, font_scale, thickness)[0][0]
-        margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
-        available_width = SCREEN_WIDTH - 2 * margin_x
-        
-        # Calculate words per row - check if user wants to force a specific number
-        if TEXT_FORCE_WORDS_PER_ROW is not None:
-            # User specified exact words per row
-            conservative_words_per_row = TEXT_FORCE_WORDS_PER_ROW
-            print(f"Using FORCED {conservative_words_per_row} words per row (from TEXT_FORCE_WORDS_PER_ROW)")
-        else:
-            # Automatic calculation based on screen width
-            estimated_chars_per_row = available_width // (char_width)  # +2 for spacing
-            avg_word_length = 4  # Average English word length
-            conservative_words_per_row = max(6, min(TEXT_WORDS_PER_ROW, estimated_chars_per_row + 2 // avg_word_length))
-            print(f"Using {conservative_words_per_row} words per row (estimated from screen width)")
-        
-        # Calculate pages based on conservative word count
-        words_per_page = TEXT_ROWS_PER_PAGE * conservative_words_per_row
-        
-        self.text_pages = []
-        current_page_words = []
-        
-        for i, word in enumerate(words):
-            current_page_words.append(word)
+            # --- Text Processing Logic (similar to original) ---
+            words = text.strip().split()
             
-            # Create new page when reaching word limit
-            if len(current_page_words) >= words_per_page or i == len(words) - 1:
-                # Organize words into rows
-                page_rows = []
-                current_row = []
-                
-                for j, page_word in enumerate(current_page_words):
-                    current_row.append(page_word)
+            # Detect Hebrew/RTL (simplified for per-page check)
+            hebrew_count = sum(1 for word in words[:20] if any(keyword in word for keyword in HEBREW_KEYWORDS))
+            is_rtl = hebrew_count >= RTL_DETECTION_THRESHOLD if RTL_AUTO_DETECT else False
+            
+            # Calculate layout
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            font_scale = TEXT_FONT_SIZE / 32.0
+            thickness = 4 if TEXT_FONT_BOLD else 2
+            char_width = cv2.getTextSize("A", font, font_scale, thickness)[0][0]
+            margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
+            available_width = SCREEN_WIDTH - 2 * margin_x
+            
+            if TEXT_FORCE_WORDS_PER_ROW is not None:
+                words_per_row = TEXT_FORCE_WORDS_PER_ROW
+            else:
+                estimated_chars = available_width // char_width
+                words_per_row = max(6, min(TEXT_WORDS_PER_ROW, estimated_chars // 5)) # approx 5 chars/word
+            
+            words_per_page = TEXT_ROWS_PER_PAGE * words_per_row
+            
+            # Split into visual pages
+            current_page_words = []
+            page_rows_list = []
+            
+            for i, word in enumerate(words):
+                current_page_words.append(word)
+                if len(current_page_words) >= words_per_page or i == len(words) - 1:
+                    # Organize into rows
+                    rows = []
+                    current_row = []
+                    for w in current_page_words:
+                        current_row.append(w)
+                        if len(current_row) >= words_per_row:
+                            rows.append(current_row)
+                            current_row = []
+                    if current_row:
+                        rows.append(current_row)
                     
-                    # Create new row when reaching conservative word limit or end of page
-                    if len(current_row) >= conservative_words_per_row or j == len(current_page_words) - 1:
-                        page_rows.append(current_row.copy())
-                        current_row = []
-                
-                self.text_pages.append(page_rows)
-                current_page_words = []
+                    page_rows_list.append(rows)
+                    current_page_words = []
+            
+            # Add Visual Pages to Sequence
+            for rows in page_rows_list:
+                self.reading_sequence.append({
+                    'type': 'page',
+                    'id': page_id,
+                    'content': rows,
+                    'is_rtl': is_rtl
+                })
+                self.total_pages += 1
+            
+            # Add Probe if exists for this page
+            if page_id in PROBES:
+                self.reading_sequence.append({
+                    'type': 'probe',
+                    'id': page_id,
+                    'content': PROBES[page_id]
+                })
         
-        self.total_pages = len(self.text_pages)
-        print(f"Created {self.total_pages} pages with {TEXT_ROWS_PER_PAGE} rows and ~{conservative_words_per_row} words per row")
-    
+        print(f"Created sequence with {len(self.reading_sequence)} steps ({self.total_pages} visual pages)")
+
     def _render_text_page(self) -> np.ndarray:
-        """Render current text page with precise word positioning and width checking"""
-        # Create background
+        """Render current text page"""
         background = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
         
-        # Check if we have Hebrew text to determine layout direction
-        is_hebrew_page = bool(re.search(r'[\u0590-\u05FF]', READING_TEXT))
+        if self.current_page >= len(self.reading_sequence):
+            return background
+            
+        step = self.reading_sequence[self.current_page]
         
-        # Calculate text area with RTL consideration
+        if step['type'] == 'probe':
+            return self._render_probe(step, background)
+            
+        # --- Render Text Page ---
+        page_rows = step['content']
+        is_rtl = step.get('is_rtl', False)
+        
         margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
         margin_y = int(SCREEN_HEIGHT * TEXT_MARGIN_Y)
         text_width = SCREEN_WIDTH - 2 * margin_x
         
-        # Font settings (OpenCV approximation of config settings)
         font = cv2.FONT_HERSHEY_SIMPLEX if not TEXT_FONT_BOLD else cv2.FONT_HERSHEY_DUPLEX
-        font_scale = TEXT_FONT_SIZE / 32.0  # REDUCED scaling for better fit
+        font_scale = TEXT_FONT_SIZE / 32.0
         thickness = 3 if TEXT_FONT_BOLD else 2
         
-        # Clear word positions for current page
         self.word_positions = []
         
-        if self.current_page < len(self.text_pages):
-            page_rows = self.text_pages[self.current_page]
+        for row_idx, row_words in enumerate(page_rows):
+            y = margin_y + row_idx * TEXT_LINE_SPACING + int(TEXT_FONT_SIZE)
+            self._render_row_with_width_check(background, row_words, margin_x, y, font, font_scale, thickness, row_idx, text_width, is_rtl)
             
-
-            
-            # Render each row with width checking and RTL layout
-            for row_idx, row_words in enumerate(page_rows):
-                if row_idx >= TEXT_ROWS_PER_PAGE:
-                    break
-                
-                # Calculate row position
-                y = margin_y + row_idx * TEXT_LINE_SPACING + int(TEXT_FONT_SIZE)
-                
-                # Render row with width constraints and RTL support
-                self._render_row_with_width_check(background, row_words, margin_x, y, font, font_scale, thickness, row_idx, text_width, is_hebrew_page)
-        
-        # Add navigation info
         self._draw_navigation_info(background)
-        
         return background
-    
+
+    def _render_probe(self, step, image):
+        """Render probe dialog"""
+        # Draw semi-transparent overlay
+        overlay = image.copy()
+        cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (240, 240, 240), -1)
+        cv2.addWeighted(overlay, 0.9, image, 0.1, 0, image)
+        
+        # Draw Question
+        question_text = step['content']
+        # Draw Question
+        question_text = step['content']
+        image = self._render_hebrew_text(
+            question_text, 
+            (SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.3)), 
+            font_size=40, 
+            color=(0, 0, 0), 
+            background_image=image,
+            centered=True # Center the text
+        )
+        
+        # Draw Yes/No Buttons
+        button_y = int(SCREEN_HEIGHT * 0.6)
+        button_width = 150
+        button_height = 60
+        spacing = 100
+        
+        # Yes Button (Right side for Hebrew?) - Let's put Yes on Right, No on Left
+        yes_x = SCREEN_WIDTH // 2 + spacing // 2
+        no_x = SCREEN_WIDTH // 2 - button_width - spacing // 2
+        
+        # Check hover
+        mx, my = self.mouse_x, self.mouse_y
+        
+        yes_hover = yes_x <= mx <= yes_x + button_width and button_y <= my <= button_y + button_height
+        no_hover = no_x <= mx <= no_x + button_width and button_y <= my <= button_y + button_height
+        
+        # Draw Yes
+        color = (100, 200, 100) if yes_hover else (150, 255, 150)
+        cv2.rectangle(image, (yes_x, button_y), (yes_x + button_width, button_y + button_height), color, -1)
+        cv2.rectangle(image, (yes_x, button_y), (yes_x + button_width, button_y + button_height), (0, 100, 0), 2)
+        cv2.putText(image, "YES", (yes_x + 40, button_y + 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 50, 0), 2)
+        
+        # Draw No
+        color = (100, 100, 255) if no_hover else (150, 150, 255)
+        cv2.rectangle(image, (no_x, button_y), (no_x + button_width, button_y + button_height), color, -1)
+        cv2.rectangle(image, (no_x, button_y), (no_x + button_width, button_y + button_height), (0, 0, 100), 2)
+        cv2.putText(image, "NO", (no_x + 50, button_y + 40), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 50), 2)
+        
+        # Handle Click
+        if self.mouse_clicked:
+            if yes_hover:
+                self.probe_answers[step['id']] = "Yes"
+                self.current_page += 1
+                self.mouse_clicked = False
+                print(f"Probe {step['id']} Answered: Yes")
+            elif no_hover:
+                self.probe_answers[step['id']] = "No"
+                self.current_page += 1
+                self.mouse_clicked = False
+                print(f"Probe {step['id']} Answered: No")
+            else:
+                self.mouse_clicked = False # Reset if clicked elsewhere
+                
+        return image
+
     def _render_row_with_width_check(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, max_width, is_hebrew_layout=False):
         """Render a row of text with width constraints and proper word wrapping"""
         
@@ -357,7 +449,8 @@ class TextReadingGazePredictor:
         hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
         contains_hebrew = any(hebrew_pattern.search(word) for word in words)
         
-        if contains_hebrew:
+        # Force Hebrew rendering if the page layout is RTL (even for English words on a Hebrew page)
+        if contains_hebrew or is_hebrew_layout:
             # For Hebrew text, calculate right-aligned position for RTL layout
             if is_hebrew_layout:
                 # Calculate right boundary for RTL text - use screen right edge minus small margin
@@ -473,7 +566,7 @@ class TextReadingGazePredictor:
             # Move to next word position
             current_x += word_size[0] + space_between_words
 
-    def _render_hebrew_text(self, text, position, font_size = TEXT_FONT_SIZE, color = TEXT_COLOR, background_image = None, image_width =SCREEN_WIDTH, image_height = SCREEN_HEIGHT, rtl_align=False):
+    def _render_hebrew_text(self, text, position, font_size = TEXT_FONT_SIZE, color = TEXT_COLOR, background_image = None, image_width =SCREEN_WIDTH, image_height = SCREEN_HEIGHT, rtl_align=False, centered=False):
         """Render Hebrew text using PIL and convert to OpenCV format"""
         try:
             # Detect if text contains Hebrew characters
@@ -553,14 +646,21 @@ class TextReadingGazePredictor:
                     #print(f"DEBUG: RTL processing error: {e}, using original text")
                     display_text = text
 
-            # Adjust position for RTL alignment if needed
+            # Adjust position for alignment if needed
             render_position = position
-            if rtl_align:
-                # For RTL: position[0] is the RIGHT boundary where text should END
+            
+            if rtl_align or centered:
+                # Calculate text dimensions
                 bbox = draw.textbbox((0, 0), display_text, font=hebrew_font)
                 text_width = bbox[2] - bbox[0]
-                # Calculate text start position: right_boundary - text_width
-                text_start_x = position[0] - text_width
+                
+                if centered:
+                    # Center text around position[0]
+                    text_start_x = position[0] - text_width // 2
+                else:
+                    # Right align: position[0] is the RIGHT boundary
+                    text_start_x = position[0] - text_width
+                    
                 # Ensure proper left margin constraint
                 final_x = max(text_start_x, 50)
                 render_position = (final_x, position[1])
@@ -588,24 +688,17 @@ class TextReadingGazePredictor:
             else:
                 return np.zeros((image_height, image_width, 3), dtype=np.uint8)
 
-
     def _render_row_with_positions(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, rtl_layout=False):
-        
         """Render a row of text with Hebrew support and capture precise word positions"""
         
         # Check if any word contains Hebrew - be very thorough
         hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
         contains_hebrew = any(hebrew_pattern.search(word) for word in words)
         
-        #print(f"DEBUG: Rendering row with {len(words)} words")
-        #print(f"DEBUG: First few words: {words[:3] if len(words) > 0 else 'None'}")
-        #print(f"DEBUG: Contains Hebrew: {contains_hebrew}")
-
         # Double check - if we have Hebrew characters anywhere, force Hebrew rendering
         row_text_check = " ".join(words)
         if not contains_hebrew and hebrew_pattern.search(row_text_check):
             contains_hebrew = True
-            #print("DEBUG: Force-enabled Hebrew rendering after full text check")
         
         if contains_hebrew:
             # Use PIL for Hebrew text rendering
@@ -618,7 +711,6 @@ class TextReadingGazePredictor:
             render_x = start_x
             
             # Render entire row with PIL
-            #print(f"DEBUG: About to render Hebrew row: '{row_text[:30]}...' at position ({render_x}, {pil_y}) RTL={rtl_layout}")
             rendered_image = self._render_hebrew_text(
                 text=row_text,
                 position=(render_x, pil_y),
@@ -633,10 +725,7 @@ class TextReadingGazePredictor:
             # Explicitly copy the rendered image back
             if rendered_image is not None:
                 image[:] = rendered_image
-                #print("DEBUG: Hebrew image copied successfully")
             else:
-                #print("WARNING: Hebrew rendering returned None! This will cause ??? to appear.")
-                #print("DEBUG: Attempting emergency Hebrew fallback...")
                 # Emergency fallback - try simple PIL rendering without RTL
                 try:
                     from PIL import ImageFont, ImageDraw, Image
@@ -649,10 +738,7 @@ class TextReadingGazePredictor:
                     draw.text((start_x, pil_y), row_text, font=hebrew_font, fill=TEXT_COLOR)
                     emergency_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
                     image[:] = emergency_image
-                    #print("DEBUG: Emergency Hebrew rendering successful")
                 except Exception as emergency_e:
-                    #print(f"ERROR: Emergency Hebrew rendering also failed: {emergency_e}")
-                    # Only then fall back to OpenCV (will show ???)
                     cv2.putText(image, "Hebrew text (display error)", (start_x, start_y), font, font_scale, (0, 0, 255), thickness)
             
             # Calculate word positions for Hebrew using PIL font metrics to match visual rendering
@@ -719,8 +805,6 @@ class TextReadingGazePredictor:
                         # Calculate word center position
                         word_center_x = current_x + word_width // 2
                         word_center_y = start_y - TEXT_FONT_SIZE // 2
-                        
-
                         
                         self.word_positions.append({
                             'word': original_word,
@@ -823,11 +907,18 @@ class TextReadingGazePredictor:
                     space_size = cv2.getTextSize(" ", font, font_scale, thickness)[0]
                     current_x += space_size[0]
 
-    
     def _draw_navigation_info(self, image):
         """Draw page navigation and controls"""
-        # Page info
-        page_info = f"Page {self.current_page + 1} of {self.total_pages}"
+        # Calculate visual page number
+        current_step = self.reading_sequence[self.current_page]
+        if current_step['type'] == 'page':
+            # Count how many pages before this
+            visual_page_num = sum(1 for i in range(self.current_page + 1) if self.reading_sequence[i]['type'] == 'page')
+            total_visual_pages = sum(1 for s in self.reading_sequence if s['type'] == 'page')
+            page_info = f"Page {visual_page_num} of {total_visual_pages}"
+        else:
+            page_info = "Comprehension Check"
+            
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 0.7
         thickness = 2
@@ -1142,6 +1233,7 @@ class TextReadingGazePredictor:
             
             # Store fixation data
             if current_velocity < SACCADE_VELOCITY_THRESHOLD:  
+                print(f"DEBUG: Fixation detected! Word: {nearest_word}, Velocity: {current_velocity}")
                 self.fixation_data.append({
                     'timestamp': current_time,
                     'x': x,
@@ -1152,6 +1244,8 @@ class TextReadingGazePredictor:
                     'pupil_size': pupil_size,
                     'blink_frequency': blink_frequency
                 })
+            # else:
+            #    print(f"DEBUG: Saccade detected (Velocity: {current_velocity})")
     
     def _find_nearest_word(self, gaze_x, gaze_y):
         """Find the nearest word to gaze coordinates"""
@@ -1194,6 +1288,7 @@ class TextReadingGazePredictor:
     
     def _export_fixation_data(self) -> str:
         """Export fixation data in the same format as your CSV example"""
+        print(f"DEBUG: Exporting fixation data. Total raw fixations: {len(self.fixation_data)}")
         if not self.fixation_data:
             print("No fixation data to export")
             return None
@@ -1209,9 +1304,21 @@ class TextReadingGazePredictor:
             # Clean the word and check if it's Hebrew
             cleaned_word = self._clean_hebrew_word(data['word'])
             
-            # Skip non-Hebrew words completely
-            if not self._is_hebrew_word(cleaned_word) or cleaned_word == "Unknown":
-                continue
+            print(f"DEBUG: Processing word: '{data['word']}' -> Cleaned: '{cleaned_word}'")
+
+            # Skip non-Hebrew words only if we want strict filtering, but for debugging let's keep everything
+            # or at least log it. For now, let's relax it to allow "Unknown" or non-Hebrew if needed.
+            # actually, let's just use the cleaned word if it exists, otherwise original
+            
+            final_word = cleaned_word if cleaned_word != "Unknown" else data['word']
+            
+            # if not self._is_hebrew_word(cleaned_word) or cleaned_word == "Unknown":
+            #    # print(f"DEBUG: Skipping non-Hebrew word: {cleaned_word}")
+            #    continue
+            
+            # Get probe answer for this page
+            page_id = self.reading_sequence[data['page']]['id'] if data['page'] < len(self.reading_sequence) else 0
+            probe_ans = self.probe_answers.get(page_id, "N/A")
             
             if current_fixation is None:
                 current_fixation = {
@@ -1219,27 +1326,40 @@ class TextReadingGazePredictor:
                     'end_time': data['timestamp'],
                     'x_positions': [data['x']],
                     'y_positions': [data['y']],
-                    'word': cleaned_word,  # Use cleaned word
+                    'word': final_word,  # Use final_word (relaxed filtering)
                     'time_from_onset': data['time_from_onset'],
                     'pupil_size': data.get('pupil_size', 0),
-                    'blink_frequency': data.get('blink_frequency', 0)
+                    'blink_frequency': data.get('blink_frequency', 0),
+                    'probe_answer': probe_ans
                 }
             else:
                 # Check if this continues the current fixation (same cleaned word)
                 time_gap = data['timestamp'] - current_fixation['end_time']
                 
-                if time_gap < 0.1 and cleaned_word == current_fixation['word']:  # Same fixation
+                # Increased threshold to 0.5s to handle slower frame rates/processing
+                if time_gap < 0.5 and final_word == current_fixation['word']:  # Same fixation
+                    # print(f"DEBUG: Extending fixation for '{final_word}'")
                     current_fixation['end_time'] = data['timestamp']
                     current_fixation['x_positions'].append(data['x'])
                     current_fixation['y_positions'].append(data['y'])
                     current_fixation['time_from_onset'] = data['time_from_onset']
                     current_fixation['pupil_size'] = data.get('pupil_size', 0)
                     current_fixation['blink_frequency'] = data.get('blink_frequency', 0)
+                    # Probe answer should be same for same page
                 else:  # New fixation
+                    print(f"DEBUG: Ending fixation for '{current_fixation['word']}' (New word: '{final_word}', Time gap: {time_gap:.3f}s)")
                     # Process completed fixation
                     duration = (current_fixation['end_time'] - current_fixation['start_time']) * 1000
                     
+                    # If duration is 0 (single point or fast samples), estimate based on sample count
+                    if duration == 0:
+                        duration = len(current_fixation['x_positions']) * 33.0 # Assume ~30fps
+                    
+                    print(f"DEBUG: Fixation candidate duration: {duration:.2f}ms (Threshold: {FIXATION_THRESHOLD}ms)")
+                    print(f"DEBUG: Start: {current_fixation['start_time']}, End: {current_fixation['end_time']}, Diff: {current_fixation['end_time'] - current_fixation['start_time']}")
+
                     if duration >= FIXATION_THRESHOLD:  # Only include significant fixations
+                        print(f"DEBUG: ACCEPTED fixation for '{current_fixation['word']}'")
                         avg_x = np.mean(current_fixation['x_positions'])
                         avg_y = np.mean(current_fixation['y_positions'])
                         avg_pupil_size = np.mean(current_fixation['pupil_size'])
@@ -1247,44 +1367,56 @@ class TextReadingGazePredictor:
 
                         processed_fixations.append({
                             'Fixation_Order': fixation_order,
+                            'Page_Number': page_id,
                             'Fixated_Word': current_fixation['word'],
                             'Fixation_X_Screen': round(avg_x, 2),
                             'Fixation_Y_Screen': round(avg_y, 2),
                             'Fixation_Duration': round(duration, 2),
                             'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
                             'Pupil_Size': round(avg_pupil_size, 2), 
-                            'Blink_Frequency': round(avg_blink_frequency, 2)
+                            'Blink_Frequency': round(avg_blink_frequency, 2),
+                            'Probe_Answer': current_fixation['probe_answer']
                         })
-                        fixation_order += 1
-                    
-                    # Start new fixation
-                    current_fixation = {
-                        'start_time': data['timestamp'],
-                        'end_time': data['timestamp'],
-                        'x_positions': [data['x']],
-                        'y_positions': [data['y']],
-                        'word': cleaned_word,  # Use cleaned word
-                        'time_from_onset': data['time_from_onset'],
-                        'pupil_size': data.get('pupil_size', 0),
-                        'blink_frequency': data.get('blink_frequency', 0)
-                    }
-        
+                    fixation_order += 1
+                
+                # Start new fixation
+                current_fixation = {
+                    'start_time': data['timestamp'],
+                    'end_time': data['timestamp'],
+                    'x_positions': [data['x']],
+                    'y_positions': [data['y']],
+                    'word': final_word,
+                    'time_from_onset': data['time_from_onset'],
+                    'pupil_size': data.get('pupil_size', 0),
+                    'blink_frequency': data.get('blink_frequency', 0),
+                    'probe_answer': probe_ans
+                }
+    
         # Process final fixation
         if current_fixation:
             duration = (current_fixation['end_time'] - current_fixation['start_time']) * 1000
+            
+            # If duration is 0 (single point or fast samples), estimate based on sample count
+            if duration == 0:
+                duration = len(current_fixation['x_positions']) * 33.0 # Assume ~30fps
+            
             if duration >= FIXATION_THRESHOLD:
                 avg_x = np.mean(current_fixation['x_positions'])
                 avg_y = np.mean(current_fixation['y_positions'])
+                avg_pupil_size = np.mean(current_fixation['pupil_size'])
+                avg_blink_frequency = np.mean(current_fixation['blink_frequency'])
                 
                 processed_fixations.append({
                     'Fixation_Order': fixation_order,
+                    'Page_Number': page_id,
                     'Fixated_Word': current_fixation['word'],
                     'Fixation_X_Screen': round(avg_x, 2),
                     'Fixation_Y_Screen': round(avg_y, 2),
                     'Fixation_Duration': round(duration, 2),
                     'Time_from_Stimulus_Onset': round(current_fixation['time_from_onset'], 2),
                     'Pupil_Size': round(avg_pupil_size,2),
-                    'Blink_Frequency': round(avg_blink_frequency,2)
+                    'Blink_Frequency': round(avg_blink_frequency,2),
+                    'Probe_Answer': current_fixation['probe_answer']
                 })
         
         # Create DataFrame and export with consecutive word grouping
@@ -1295,6 +1427,9 @@ class TextReadingGazePredictor:
             df = pd.DataFrame(grouped_fixations)
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"eye_movement_data_{timestamp}.csv"
+            
+            # Ensure output directory exists
+            os.makedirs(self.output_dir, exist_ok=True)
             filepath = os.path.join(self.output_dir, filename)
             
             df.to_csv(filepath, index=False)
@@ -1302,6 +1437,8 @@ class TextReadingGazePredictor:
             print(f"Hebrew words recognized: {len(set(fix['Fixated_Word'] for fix in grouped_fixations))}")
             print(f"Grouped from {len(processed_fixations)} individual fixations")
             return filepath
+        else:
+            print("DEBUG: No processed fixations found after filtering (or input data was empty).")
 
         return None
     
@@ -1316,55 +1453,63 @@ class TextReadingGazePredictor:
         accumulated_x = []
         accumulated_y = []
         word_start_time = None
-        word_start_order = None
         pupil_sizes = []
         blink_frequencies = []
+        probe_answers = []
+        current_page = None
         
         for fixation in fixations:
             word = fixation['Fixated_Word']
+            page = fixation.get('Page_Number', 0)
             
-            if word == current_word and current_word is not None:
-                # Same word - accumulate data
+            if word == current_word and page == current_page and current_word is not None:
+                # Same word AND same page - accumulate data
                 accumulated_duration += fixation['Fixation_Duration']
                 accumulated_x.append(fixation['Fixation_X_Screen'])
                 accumulated_y.append(fixation['Fixation_Y_Screen'])
                 pupil_sizes.append(fixation['Pupil_Size'])
                 blink_frequencies.append(fixation['Blink_Frequency'])
+                probe_answers.append(fixation['Probe_Answer'])
             else:
                 # Different word - save previous group if exists
                 if current_word is not None:
                     grouped_fixations.append({
                         'Fixation_Order': len(grouped_fixations) + 1,
+                        'Page_Number': current_page,
                         'Fixated_Word': current_word,
                         'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
                         'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
                         'Fixation_Duration': round(accumulated_duration, 2),
                         'Time_from_Stimulus_Onset': word_start_time,
                         'Pupil_Size': round(np.mean(pupil_sizes), 2),
-                        'Blink_Frequency': round(np.mean(blink_frequencies), 2)
+                        'Blink_Frequency': round(np.mean(blink_frequencies), 2),
+                        'Probe_Answer': probe_answers[0] # Should be same for group
                     })
                 
                 # Start new word group
                 current_word = word
+                current_page = page
                 word_start_time = fixation['Time_from_Stimulus_Onset']
-                word_start_order = fixation['Fixation_Order']
                 accumulated_duration = fixation['Fixation_Duration']
                 accumulated_x = [fixation['Fixation_X_Screen']]
                 accumulated_y = [fixation['Fixation_Y_Screen']]
                 pupil_sizes = [fixation['Pupil_Size']]
                 blink_frequencies = [fixation['Blink_Frequency']]
+                probe_answers = [fixation['Probe_Answer']]
         
         # Don't forget the last word group
         if current_word is not None:
             grouped_fixations.append({
                 'Fixation_Order': len(grouped_fixations) + 1,
+                'Page_Number': current_page,
                 'Fixated_Word': current_word,
                 'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
                 'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
                 'Fixation_Duration': round(accumulated_duration, 2),
                 'Time_from_Stimulus_Onset': word_start_time,
                 'Pupil_Size': round(np.mean(pupil_sizes), 2),
-                'Blink_Frequency': round(np.mean(blink_frequencies), 2)
+                'Blink_Frequency': round(np.mean(blink_frequencies), 2),
+                'Probe_Answer': probe_answers[0]
             })
         
         return grouped_fixations
@@ -1389,6 +1534,7 @@ class TextReadingGazePredictor:
         # Create fullscreen window
         cv2.namedWindow('Text Reading Analysis', cv2.WND_PROP_FULLSCREEN)
         cv2.setWindowProperty('Text Reading Analysis', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        cv2.setMouseCallback('Text Reading Analysis', self._mouse_callback)
         
         # Start video recording
         if self.video_recorder and VIDEO_RECORDING_ENABLED:
@@ -1430,16 +1576,26 @@ class TextReadingGazePredictor:
                     smoothed_x = int(self.smoothed_x)
                     smoothed_y = int(self.smoothed_y)
                     
-                    # Add to analysis
-                    self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
+                    # Add to analysis ONLY if it's a page (not a probe)
+                    current_step = self.reading_sequence[self.current_page]
+                    if current_step['type'] == 'page':
+                        print(f"DEBUG: Adding gaze point ({smoothed_x}, {smoothed_y})")
+                        self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
+                    else:
+                        # Optional: Add marker for probe
+                        cv2.circle(text_display, (SCREEN_WIDTH-30, 30), 10, (0, 255, 255), -1)
                     
                     # Draw gaze point (semi-transparent)
                     overlay = text_display.copy()
                     cv2.circle(overlay, (smoothed_x, smoothed_y), 12, (255, 0, 0), -1)
                     cv2.addWeighted(overlay, 0.6, text_display, 0.4, 0, text_display)
+                else:
+                    # print("DEBUG: No prediction")
+                    overlay = text_display.copy()
                 
                 # Record overlay frame (after all processing)
                 if self.video_recorder and RECORD_OVERLAY_DISPLAY:
+                    # print("DEBUG: Recording overlay frame")
                     self.video_recorder.record_frame(overlay_frame=text_display)
                 
                 # Calculate and display FPS
@@ -1461,9 +1617,11 @@ class TextReadingGazePredictor:
                         self.current_page -= 1
                         print(f"Moved to page {self.current_page + 1}")
                 elif key == ord('d') or key == ord('D'):  # Next page
-                    if self.current_page < self.total_pages - 1:
-                        self.current_page += 1
-                        print(f"Moved to page {self.current_page + 1}")
+                    if self.current_page < len(self.reading_sequence) - 1:
+                        # Only allow next if it's a page (probes require click)
+                        if self.reading_sequence[self.current_page]['type'] == 'page':
+                            self.current_page += 1
+                            print(f"Moved to step {self.current_page + 1}")
                 elif key == ord('e') or key == ord('E'):  # Export data
                     self._export_fixation_data()
         

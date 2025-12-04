@@ -51,20 +51,20 @@ FACE_BOUNDARY_SENSITIVITY = 0.1  # sensitivity for boundary warnings
 MIN_FACE_SIZE = 100  # minimum face bounding box size in pixels
 
 # MediaPipe Face Detection Confidence Settings
-FACE_DETECTION_CONFIDENCE = 0.9    # Detection confidence
-FACE_TRACKING_CONFIDENCE = 0.9     # Tracking confidence
+FACE_DETECTION_CONFIDENCE = 0.95    # Detection confidence
+FACE_TRACKING_CONFIDENCE = 0.95     # Tracking confidence
 
 # Calibration Process
 BASELINE_FRAMES = 30  # frames for pitch/yaw baseline calculation
 CALIBRATION_FRAMES = 11  # frames per calibration point
-CALIBRATION_GRID_SIZE = 3  # 3x3 grid = 9 points
+CALIBRATION_GRID_SIZE = 4  # 4x4 grid = 16 points
 CALIBRATION_POINT_SIZE = 20  # radius of calibration points
 CALIBRATION_MARGIN_X = 150  # pixels from screen edges
 CALIBRATION_MARGIN_Y = 200  # pixels from screen edges
 
 # Animation Settings
 ANIMATION_SHRINK_FRAMES = 10  # frames for point shrinking animation
-FADE_IN_FRAMES = 5  # frames for point fade in
+FADE_IN_FRAMES = 10  # frames for point fade in
 
 # ============================================================================
 # FEATURE EXTRACTION
@@ -135,7 +135,7 @@ XGB_PARAMS = {
 }
 
 # Cross-validation settings
-CV_FOLDS = 5
+CV_FOLDS = 3
 
 SCORING_METRIC = 'neg_mean_squared_error'
 
@@ -188,31 +188,38 @@ ZSCORE_THRESHOLD = 3.0
 # EYE ANALYSIS AND READING SETTINGS
 # ============================================================================
 # Text Display Control
-TEXT_ROWS_PER_PAGE = 4             # Number of text rows per page
+TEXT_ROWS_PER_PAGE = 3             # Number of text rows per page
 TEXT_WORDS_PER_ROW = 10            # Maximum words per row (used in automatic calculation)
-TEXT_FORCE_WORDS_PER_ROW = None        # Set to a number (e.g., 5) to force exact words per row, None for automatic
+TEXT_FORCE_WORDS_PER_ROW = 10        # Set to a number (e.g., 5) to force exact words per row, None for automatic
 TEXT_FONT = "arial"                 # Font type (arial, times, calibri, etc.)
-TEXT_FONT_SIZE = 30                 # Font size in points
+TEXT_FONT_SIZE = 40               # Font size in points
 TEXT_FONT_BOLD = True               # Bold text (True/False)
 TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
 TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
-TEXT_LINE_SPACING = 85              # Spacing between lines in pixels
+TEXT_LINE_SPACING = 80              # Spacing between lines in pixels
 TEXT_MARGIN_X = 0.10                # Horizontal margin (10% from edges)
 TEXT_MARGIN_Y = 0.35                # Vertical margin (35% from edges)
 
 # Reading Text Content (100+ words - easily customizable)
-READING_TEXT =  """ 
-פוטוניקת סיליקון היא טכנולוגיה מהפכנית המשלבת את עולם האופטיקה עם תעשיית המוליכים למחצה. במקום להשתמש באלקטרונים להעברת מידע, כפי שנעשה במעגלים אלקטרוניים מסורתיים, טכנולוגיה זו משתמשת בפוטונים – חלקיקי אור. הרעיון המרכזי הוא לייצר רכיבים אופטיים זעירים, כגון מוליכי גלים, לייזרים, ומאפננים, ישירות על גבי שבבי סיליקון סטנדרטיים. הדבר מאפשר למנף את תהליכי הייצור המדויקים והזולים של תעשיית השבבים כדי ליצור מערכות אופטיות מורכבות בעלות נמוכה.
+# Reading Content - Pages and Probes
+PAGES = {
+    1: """זהו הטקסט של העמוד הראשון כדי לבדוק את רנדרינג של המערכת ולאחר מכן לבדוק את קריאת הנתונים מהטקסט""",
+    
+    2: """בטקסט של העמוד השני נכניס כמה מילים באנגלית כמו THE, THIS, THAT, THESE, THOSE כדי שנוכל לבדוק איך הוא מתמודד עם טקסט באנגלית""",
+    
+    3: """ בעמוד השלישי נכניס כמה מילים בעברית כמו את, על, עם, בין, אם, מה, זה, הוא ואולי גם כמה סימנים?  """,
+    
+    4: """זהו הטקסט של העמוד האחרון, תודה שקראתם!"""
+}
 
-היתרון המרכזי של פוטוניקת סיליקון הוא היכולת להעביר כמויות אדירות של מידע במהירות האור, תוך צריכת אנרגיה נמוכה משמעותית בהשוואה לחיבורי נחושת. ככל שקצב הנתונים בעולם גדל באופן מעריכי, חיבורים אלקטרוניים הופכים לצוואר בקבוק, מתחממים ומאבדים יעילות. פוטוניקת סיליקון פותרת בעיה זו על ידי החלפת החוטים ב"כבישים" של אור על השבב עצמו.
-
-היישומים של טכנולוגיה זו הם רחבי היקף. בחוות שרתים ומרכזי נתונים, היא מאפשרת תקשורת מהירה פי כמה בין שרתים ומעבדים, ומאיצה את יכולות הבינה המלאכותית והענן. בתחום התקשורת, היא מהווה את הבסיס לרשתות אינטרנט מהירות מהדור הבא. בנוסף, הטכנולוגיה נכנסת לתחומים חדשים כמו חיישנים רפואיים (ביו-סנסורים), מערכות מכ"ם מבוססות אור (LiDAR) לרכב אוטונומי, ואף מחשוב קוונטי.
-
-פוטוניקת סיליקון אינה רק שדרוג טכנולוגי; היא שינוי תפיסתי באופן שבו אנו בונים מערכות מחשוב ותקשורת, והיא צפויה להיות אבן יסוד בעולם הטכנולוגי של העשורים הבאים.
-"""
+PROBES = {
+    1: "האם הטקסט ברור?",
+    2: "האם הבנת את הטקסט?",
+    3: "האם הטקסט ברור?"
+}
 
 # Eye Movement Analysis Settings
-FIXATION_THRESHOLD = 50              # Minimum duration (ms) to count as fixation
+FIXATION_THRESHOLD = 10              # Minimum duration (ms) to count as fixation
 SACCADE_VELOCITY_THRESHOLD = 200    # Minimum velocity (px/s) for saccade detection
 WORD_PROXIMITY_THRESHOLD = 100       # Maximum distance (px) to associate gaze with word
 ANALYSIS_EXPORT_FORMAT = "detailed"  # "detailed" or "simple"
@@ -246,5 +253,5 @@ HEBREW_KEYWORDS = ["של", "את", "על", "אל", "עם", "בין", "אם", "מ
 # RTL (Right-to-Left) Text Configuration
 RTL_READING_DIRECTION = "rtl"  # Direction for RTL text processing
 RTL_AUTO_DETECT = True         # Auto-detect RTL text and adjust eye tracking
-RTL_DETECTION_THRESHOLD = 2    # Minimum Hebrew words to consider text as RTL
+RTL_DETECTION_THRESHOLD = 1    # Minimum Hebrew words to consider text as RTL
 

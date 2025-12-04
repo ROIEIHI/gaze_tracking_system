@@ -1,12 +1,12 @@
 GAZE TRACKING SESSION SUMMARY
 ==================================================
 
-Participant: Ester_Shazar
-Session Time: 2025-10-04 18:55:34
-Calibration File: calibration_data_20251004_185338.csv
+Participant: csv_export_test
+Session Time: 2025-12-02 16:53:42
+Calibration File: calibration_data_20251202_165143.csv
 Model File: gaze_model.pkl
 Reading Mode: Hebrew RTL
 Screen Resolution: 1080×720
-Text Font Size: 30
+Text Font Size: 40
 
 Session completed successfully!
