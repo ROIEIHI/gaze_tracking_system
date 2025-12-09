@@ -109,7 +109,7 @@ def main():
     else:
         print("[WARNING] requirements.txt not found, installing packages individually...")
         
-        # Core packages
+        # Core packages - all actually used by the system
         packages = [
             "opencv-python>=4.8.0",
             "mediapipe>=0.10.0", 
@@ -121,8 +121,7 @@ def main():
             "joblib>=1.3.0",
             "Pillow>=10.0.0",
             "python-bidi>=0.4.2",
-            "arabic-reshaper>=3.0.0",
-            "matplotlib>=3.7.0"
+            "arabic-reshaper>=3.0.0"
         ]
         
         failed_packages = []
@@ -144,6 +143,8 @@ def main():
         ("pandas", "pandas"),
         ("scikit-learn", "sklearn"),
         ("xgboost", "xgboost"),
+        ("scipy", "scipy"),
+        ("joblib", "joblib"),
         ("Pillow", "PIL"),
         ("python-bidi", "bidi"),
         ("arabic-reshaper", "arabic_reshaper")

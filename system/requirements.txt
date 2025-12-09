@@ -9,6 +9,7 @@ mediapipe>=0.10.0
 numpy>=1.24.0
 pandas>=2.0.0
 scikit-learn>=1.3.0
+xgboost>=1.7.0
 scipy>=1.10.0
 joblib>=1.3.0
 
@@ -21,17 +22,3 @@ Pillow>=10.0.0
 # Hebrew/Arabic Text Processing (RTL Support)
 python-bidi>=0.4.2
 arabic-reshaper>=3.0.0
-
-# Data Analysis and Visualization (Optional but recommended)
-matplotlib>=3.7.0
-seaborn>=0.12.0
-
-# Development and Testing (Optional)
-pytest>=7.0.0
-pytest-cov>=4.0.0
-
-# Performance Optimization (Optional)
-numba>=0.57.0
-
-# Additional Utilities
-python-dateutil>=2.8.0
