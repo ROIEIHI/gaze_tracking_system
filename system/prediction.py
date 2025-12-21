@@ -1233,7 +1233,7 @@ class TextReadingGazePredictor:
             
             # Store fixation data
             if current_velocity < SACCADE_VELOCITY_THRESHOLD:  
-                print(f"DEBUG: Fixation detected! Word: {nearest_word}, Velocity: {current_velocity}")
+                # print(f"DEBUG: Fixation detected! Word: {nearest_word}, Velocity: {current_velocity}")
                 self.fixation_data.append({
                     'timestamp': current_time,
                     'x': x,
@@ -1288,7 +1288,7 @@ class TextReadingGazePredictor:
     
     def _export_fixation_data(self) -> str:
         """Export fixation data in the same format as your CSV example"""
-        print(f"DEBUG: Exporting fixation data. Total raw fixations: {len(self.fixation_data)}")
+        # print(f"DEBUG: Exporting fixation data. Total raw fixations: {len(self.fixation_data)}")
         if not self.fixation_data:
             print("No fixation data to export")
             return None
@@ -1304,7 +1304,7 @@ class TextReadingGazePredictor:
             # Clean the word and check if it's Hebrew
             cleaned_word = self._clean_hebrew_word(data['word'])
             
-            print(f"DEBUG: Processing word: '{data['word']}' -> Cleaned: '{cleaned_word}'")
+            # print(f"DEBUG: Processing word: '{data['word']}' -> Cleaned: '{cleaned_word}'")
 
             # Skip non-Hebrew words only if we want strict filtering, but for debugging let's keep everything
             # or at least log it. For now, let's relax it to allow "Unknown" or non-Hebrew if needed.
@@ -1347,7 +1347,7 @@ class TextReadingGazePredictor:
                     current_fixation['blink_frequency'] = data.get('blink_frequency', 0)
                     # Probe answer should be same for same page
                 else:  # New fixation
-                    print(f"DEBUG: Ending fixation for '{current_fixation['word']}' (New word: '{final_word}', Time gap: {time_gap:.3f}s)")
+                    # print(f"DEBUG: Ending fixation for '{current_fixation['word']}' (New word: '{final_word}', Time gap: {time_gap:.3f}s)")
                     # Process completed fixation
                     duration = (current_fixation['end_time'] - current_fixation['start_time']) * 1000
                     
@@ -1355,11 +1355,11 @@ class TextReadingGazePredictor:
                     if duration == 0:
                         duration = len(current_fixation['x_positions']) * 33.0 # Assume ~30fps
                     
-                    print(f"DEBUG: Fixation candidate duration: {duration:.2f}ms (Threshold: {FIXATION_THRESHOLD}ms)")
-                    print(f"DEBUG: Start: {current_fixation['start_time']}, End: {current_fixation['end_time']}, Diff: {current_fixation['end_time'] - current_fixation['start_time']}")
+                    # print(f"DEBUG: Fixation candidate duration: {duration:.2f}ms (Threshold: {FIXATION_THRESHOLD}ms)")
+                    # print(f"DEBUG: Start: {current_fixation['start_time']}, End: {current_fixation['end_time']}, Diff: {current_fixation['end_time'] - current_fixation['start_time']}")
 
                     if duration >= FIXATION_THRESHOLD:  # Only include significant fixations
-                        print(f"DEBUG: ACCEPTED fixation for '{current_fixation['word']}'")
+                        # print(f"DEBUG: ACCEPTED fixation for '{current_fixation['word']}'")
                         avg_x = np.mean(current_fixation['x_positions'])
                         avg_y = np.mean(current_fixation['y_positions'])
                         avg_pupil_size = np.mean(current_fixation['pupil_size'])
@@ -1438,9 +1438,8 @@ class TextReadingGazePredictor:
             print(f"Grouped from {len(processed_fixations)} individual fixations")
             return filepath
         else:
-            print("DEBUG: No processed fixations found after filtering (or input data was empty).")
-
-        return None
+            # print("DEBUG: No processed fixations found after filtering (or input data was empty).")
+            return None
     
     def _group_consecutive_words(self, fixations):
         """Group consecutive fixations on the same word to avoid duplicates"""
@@ -1579,7 +1578,7 @@ class TextReadingGazePredictor:
                     # Add to analysis ONLY if it's a page (not a probe)
                     current_step = self.reading_sequence[self.current_page]
                     if current_step['type'] == 'page':
-                        print(f"DEBUG: Adding gaze point ({smoothed_x}, {smoothed_y})")
+                        # print(f"DEBUG: Adding gaze point ({smoothed_x}, {smoothed_y})")
                         self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
                     else:
                         # Optional: Add marker for probe
