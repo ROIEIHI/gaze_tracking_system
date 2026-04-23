@@ -1,0 +1,12 @@
+GAZE TRACKING SESSION SUMMARY
+==================================================
+
+Participant: Koren_Mentesh_322951641_G4
+Session Time: 2025-12-22 18:40:00
+Calibration File: calibration_data_20251222_180030.csv
+Model File: gaze_model.pkl
+Reading Mode: Hebrew RTL
+Screen Resolution: 1080×720
+Text Font Size: 25
+
+Session completed successfully!

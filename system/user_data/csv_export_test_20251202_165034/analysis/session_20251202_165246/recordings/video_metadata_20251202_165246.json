@@ -1,9 +1,0 @@
-{
-  "recording_ended": "2025-12-02T16:53:41.373465",
-  "camera_feed_path": "user_data\\csv_export_test_20251202_165034\\analysis\\session_20251202_165246\\recordings\\camera_feed_20251202_165246_20251202_165252.mp4",
-  "overlay_display_path": "user_data\\csv_export_test_20251202_165034\\analysis\\session_20251202_165246\\recordings\\overlay_display_20251202_165246_20251202_165252.mp4",
-  "fps": 30,
-  "codec": "mp4v",
-  "camera_resolution": "640x480",
-  "overlay_resolution": "1080x720"
-}

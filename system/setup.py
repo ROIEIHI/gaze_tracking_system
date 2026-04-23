@@ -112,7 +112,7 @@ def main():
         # Core packages - all actually used by the system
         packages = [
             "opencv-python>=4.8.0",
-            "mediapipe>=0.10.0", 
+            "mediapipe==0.10.14", 
             "numpy>=1.24.0",
             "pandas>=2.0.0",
             "scikit-learn>=1.3.0",

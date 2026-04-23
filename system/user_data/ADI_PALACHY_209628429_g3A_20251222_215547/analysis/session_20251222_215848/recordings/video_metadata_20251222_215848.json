@@ -1,0 +1,9 @@
+{
+  "recording_ended": "2025-12-22T22:11:46.122536",
+  "camera_feed_path": "user_data\\ADI_PALACHY_209628429_g3A_20251222_215547\\analysis\\session_20251222_215848\\recordings\\camera_feed_20251222_215848_20251222_215944.mp4",
+  "overlay_display_path": "user_data\\ADI_PALACHY_209628429_g3A_20251222_215547\\analysis\\session_20251222_215848\\recordings\\overlay_display_20251222_215848_20251222_215944.mp4",
+  "fps": 30,
+  "codec": "mp4v",
+  "camera_resolution": "640x480",
+  "overlay_resolution": "1080x720"
+}

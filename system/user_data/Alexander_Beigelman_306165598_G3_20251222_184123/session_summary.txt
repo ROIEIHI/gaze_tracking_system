@@ -1,0 +1,12 @@
+GAZE TRACKING SESSION SUMMARY
+==================================================
+
+Participant: Alexander_Beigelman_306165598_G3
+Session Time: 2025-12-22 18:57:53
+Calibration File: calibration_data_20251222_184323.csv
+Model File: gaze_model.pkl
+Reading Mode: Hebrew RTL
+Screen Resolution: 1080×720
+Text Font Size: 25
+
+Session completed successfully!

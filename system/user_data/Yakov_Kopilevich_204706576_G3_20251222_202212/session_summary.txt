@@ -1,0 +1,12 @@
+GAZE TRACKING SESSION SUMMARY
+==================================================
+
+Participant: Yakov_Kopilevich_204706576_G3
+Session Time: 2025-12-22 20:34:10
+Calibration File: calibration_data_20251222_202401.csv
+Model File: gaze_model.pkl
+Reading Mode: Hebrew RTL
+Screen Resolution: 1080×720
+Text Font Size: 25
+
+Session completed successfully!

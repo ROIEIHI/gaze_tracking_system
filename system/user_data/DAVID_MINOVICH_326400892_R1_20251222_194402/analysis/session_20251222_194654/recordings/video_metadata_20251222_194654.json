@@ -1,0 +1,9 @@
+{
+  "recording_ended": "2025-12-22T20:00:24.718048",
+  "camera_feed_path": "user_data\\DAVID_MINOVICH_326400892_R1_20251222_194402\\analysis\\session_20251222_194654\\recordings\\camera_feed_20251222_194654_20251222_194752.mp4",
+  "overlay_display_path": "user_data\\DAVID_MINOVICH_326400892_R1_20251222_194402\\analysis\\session_20251222_194654\\recordings\\overlay_display_20251222_194654_20251222_194752.mp4",
+  "fps": 30,
+  "codec": "mp4v",
+  "camera_resolution": "640x480",
+  "overlay_resolution": "1080x720"
+}

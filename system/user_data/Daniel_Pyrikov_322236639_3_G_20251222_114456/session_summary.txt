@@ -1,0 +1,12 @@
+GAZE TRACKING SESSION SUMMARY
+==================================================
+
+Participant: Daniel_Pyrikov_322236639_3_G
+Session Time: 2025-12-22 12:06:54
+Calibration File: calibration_data_20251222_114707.csv
+Model File: gaze_model.pkl
+Reading Mode: Hebrew RTL
+Screen Resolution: 1080×720
+Text Font Size: 25
+
+Session completed successfully!
