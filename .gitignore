@@ -98,3 +98,7 @@ old/
 # Temporary files
 *.tmp
 *.log
+
+# User session recordings (large, personal data)
+user_data/
+.venv/

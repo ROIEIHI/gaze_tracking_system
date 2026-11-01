@@ -57,14 +57,14 @@ FACE_TRACKING_CONFIDENCE = 0.9     # Tracking confidence
 # Calibration Process
 BASELINE_FRAMES = 30  # frames for pitch/yaw baseline calculation
 CALIBRATION_FRAMES = 11  # frames per calibration point
-CALIBRATION_GRID_SIZE = 3  # 3x3 grid = 9 points
+CALIBRATION_GRID_SIZE = 4  # 4x4 grid = 16 points
 CALIBRATION_POINT_SIZE = 20  # radius of calibration points
 CALIBRATION_MARGIN_X = 150  # pixels from screen edges
 CALIBRATION_MARGIN_Y = 200  # pixels from screen edges
 
 # Animation Settings
 ANIMATION_SHRINK_FRAMES = 10  # frames for point shrinking animation
-FADE_IN_FRAMES = 5  # frames for point fade in
+FADE_IN_FRAMES = 10  # frames for point fade in
 
 # ============================================================================
 # FEATURE EXTRACTION
@@ -135,7 +135,7 @@ XGB_PARAMS = {
 }
 
 # Cross-validation settings
-CV_FOLDS = 5
+CV_FOLDS = 3
 
 SCORING_METRIC = 'neg_mean_squared_error'
 
@@ -154,7 +154,7 @@ CYAN = (255, 255, 0)
 
 # Text settings
 FONT_SCALE = 1.0
-FONT_THICKNESS = 2
+FONT_THICKNESS = 1
 TEXT_COLOR = WHITE
 ERROR_COLOR = RED
 SUCCESS_COLOR = GREEN
@@ -188,31 +188,109 @@ ZSCORE_THRESHOLD = 3.0
 # EYE ANALYSIS AND READING SETTINGS
 # ============================================================================
 # Text Display Control
-TEXT_ROWS_PER_PAGE = 4             # Number of text rows per page
+TEXT_ROWS_PER_PAGE = 3             # Number of text rows per page
 TEXT_WORDS_PER_ROW = 10            # Maximum words per row (used in automatic calculation)
-TEXT_FORCE_WORDS_PER_ROW = None        # Set to a number (e.g., 5) to force exact words per row, None for automatic
-TEXT_FONT = "arial"                 # Font type (arial, times, calibri, etc.)
-TEXT_FONT_SIZE = 30                 # Font size in points
-TEXT_FONT_BOLD = True               # Bold text (True/False)
+TEXT_FORCE_WORDS_PER_ROW = 10        # Set to a number (e.g., 5) to force exact words per row, None for automatic
+TEXT_FONT = "times"                 # Font type (arial, times, calibri, etc.)
+TEXT_FONT_SIZE = 25               # Font size in points
+TEXT_FONT_BOLD = False              # Bold text (True/False)
 TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
 TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
-TEXT_LINE_SPACING = 85              # Spacing between lines in pixels
-TEXT_MARGIN_X = 0.10                # Horizontal margin (10% from edges)
+TEXT_LINE_SPACING = 80              # Spacing between lines in pixels
+TEXT_MARGIN_X = 0.2                # Horizontal margin (10% from edges)
 TEXT_MARGIN_Y = 0.35                # Vertical margin (35% from edges)
 
 # Reading Text Content (100+ words - easily customizable)
-READING_TEXT =  """ 
-פוטוניקת סיליקון היא טכנולוגיה מהפכנית המשלבת את עולם האופטיקה עם תעשיית המוליכים למחצה. במקום להשתמש באלקטרונים להעברת מידע, כפי שנעשה במעגלים אלקטרוניים מסורתיים, טכנולוגיה זו משתמשת בפוטונים – חלקיקי אור. הרעיון המרכזי הוא לייצר רכיבים אופטיים זעירים, כגון מוליכי גלים, לייזרים, ומאפננים, ישירות על גבי שבבי סיליקון סטנדרטיים. הדבר מאפשר למנף את תהליכי הייצור המדויקים והזולים של תעשיית השבבים כדי ליצור מערכות אופטיות מורכבות בעלות נמוכה.
+# Reading Content - Pages and Probes
+PAGES = {
+    1: """גידול כלב מביא שמחה והרגשה טובה לבני המשפחה בכל יום.  טיולים חשובים לבריאות הכלב, למצב הרוח שלו ולמפגש עם כלבים אחרים. עדיף לצאת לכמה טיולים קצרים ביום ולא לטיול אחד ארוך,  כך הכלב רגוע יותר ומרגיש בטוח בסביבה הקרובה והמוכרת לו. משחק כל יום עוזר לכלב להוציא אנרגיה, ליהנות מהזמן שלו, ולהרגיש טוב ורגוע יותר במהלך היום, לכן כדאי לעשות את לעיתים קרובות. המשחק עוזר ליצור קשר טוב עם בני הבית, לכן חשוב להכין לכלב מקום שקט ונוח לישון בו ולתת לו צעצועים פשוטים ובטוחים. """,
+    
+    2: """ רצוי לחשוף את הכלב לאנשים ולרעשים לאט ובהדרגה ולתת לכלב אוכל ומים בכל יום. את האוכל נותנים בכמה ארוחות קטנות.  ביקור אצל וטרינר עוזר לשמור על בריאות הכלב ואיכות חייו. מומלץ לטפל בכלב באהבה ובסבלנות, ולשמור על שגרה קבועה.""",
+    
+    3: """עד כמה נדדת מ 1-5?""",
 
-היתרון המרכזי של פוטוניקת סיליקון הוא היכולת להעביר כמויות אדירות של מידע במהירות האור, תוך צריכת אנרגיה נמוכה משמעותית בהשוואה לחיבורי נחושת. ככל שקצב הנתונים בעולם גדל באופן מעריכי, חיבורים אלקטרוניים הופכים לצוואר בקבוק, מתחממים ומאבדים יעילות. פוטוניקת סיליקון פותרת בעיה זו על ידי החלפת החוטים ב"כבישים" של אור על השבב עצמו.
+    4: """ביטחון עצמי נתפס בספרות כתהליך מתמשך, המתעצב מתוך חוויות ופרשנויות אישיות בהקשרים משתנים. תהליך זה מוגדר כמרכיב דינמי בזהות, ולא כתכונה קבועה ובלתי משתנה לאורך זמן. המחקר מבחין בין ביטחון כללי לבין ביטחון תחומי בהקשרים כמו עבודה, למידה או הורות, בעוד שביטחון כללי מכוון התנהלות רחבה.  """,
 
-היישומים של טכנולוגיה זו הם רחבי היקף. בחוות שרתים ומרכזי נתונים, היא מאפשרת תקשורת מהירה פי כמה בין שרתים ומעבדים, ומאיצה את יכולות הבינה המלאכותית והענן. בתחום התקשורת, היא מהווה את הבסיס לרשתות אינטרנט מהירות מהדור הבא. בנוסף, הטכנולוגיה נכנסת לתחומים חדשים כמו חיישנים רפואיים (ביו-סנסורים), מערכות מכ"ם מבוססות אור (LiDAR) לרכב אוטונומי, ואף מחשוב קוונטי.
+    5: """ביטחון תחומי קשור לתפקוד ולהערכת ביצועים ספציפיים. בלי תחושת ביטחון, אנשים נוטים לדפוסי הימנעות, לעומת זאת, ביטחון מבוסס עשוי לעודד מחויבות, התמדה והרחבת תחומי פעולה.  שינויים בביטחון מתוארים כתהליכים, הכוללים ניטור עצמי ובחינת דפוסי חשיבה המשוב הפנימי  מופעל,  ומכוון לבחירות ואסטרטגיות התנהלות. הספרות מראה שספק מתון תורם לחשיבה, ללמידה מתמשכת ולהעמקת ההבנה במצבים חברתיים שונים.""",
 
-פוטוניקת סיליקון אינה רק שדרוג טכנולוגי; היא שינוי תפיסתי באופן שבו אנו בונים מערכות מחשוב ותקשורת, והיא צפויה להיות אבן יסוד בעולם הטכנולוגי של העשורים הבאים.
-"""
+    6: """עד כמה נדדת במחשבותיך מ1-5?""",
+
+    7: """כל אדם אשר יופיע במסמכי פתיחת החשבון כמיופה סמכות רחבה לפעול בשמי ובהתאם לשיקול דעתו המקצועי ייחשב מורשה מלא לכל דבר ועניין, בכפוף לאישור מוקדם ומפורש של הבנק ובהתאם לדרישותיו הפנימיות.  הרשאה זו תחול על כלל ערוצי השירות הקיימים, לרבות ערוצים דיגיטליים, ותהיה בתוקף גם ביחס לערוצים עתידיים שיתווספו מבלי לפגוע בזכות הבנק לקבוע תנאים נוספים לפי שיקול דעתו.  כל פעולה שתבוצע בחשבון תיחשב כפעולה שבוצעה בשמי ובאחריותי המלאה גם במקרה של חריגה מסמכות מוצהרת, אלא אם נמסרה הודעה כתובה מתועדת ומאושרת כדין הצטרפות לשירותים נוספים.""",
+
+    8: """כל שינוי בתנאים יחייב אותי ללא הסתייגות. אני מתחייב להימנע מהתקשרויות סותרות ולשפות את הבנק בגין כל נזק שייגרם כתוצאה מהפרת הוראות אלו. בכל מקרה תחול עליי אחריות משפטית מלאה ומצטברת לכל פעולה עתידית שתתבצע במסגרת ניהול החשבון האמור.""",
+
+    9: """עד כמה נדדת במחשבותיך מ1-5?""",
+
+    10: """חוכמה לאור הנר נתפסת במחקר האמנותי כתהליך מתמשך, המתעצב מתוך הקשרים חזותיים ופרשנויות תרבותיות. תהליך זה מוגדר כמרכיב דינמי במשמעות, ולא כייצוג קבוע ובלתי משתנה. המחקר מבחין בין ייצוג כללי לבין ייצוג תחומי בהקשרים מדעיים ואמנותיים בעוד ייצוג כללי מכוון תפיסה רעיונית רחבה, ייצוג תחומי קשור להערכת סמלים שני היבטי הייצוג ניתנים לפיתוח באמצעות ניסוי חוזר ורפלקציה בהיעדר ייצוג מגובש, פרשנויות נוטות לעמימות ולהגבלת הבנה לעומת זאת, ייצוג מבוסס עשוי לעודד העמקה והרחבת פרשנות.""",
+
+    11: """עד כמה נדדת במחשבותיך מ 1-5?""",
+
+    12: """במסורת האמנותית, נושא הבשורה מתפתח כתהליך מתמשך הנשען על הקשרים תרבותיים ועל פרשנויות תאולוגיות שונות. המשמעות נבנית כאן כתהליך מתפתח וגמיש, ולא כייצוג סגור ובלתי משתנה. ניכרת הבחנה בין משמעות כללית לבין משמעות תחומית בהקשרים דוקטרינריים. המשמעות הכללית מכוונת להבנה תאולוגית רחבה, ואילו המשמעות התחומית עוסקת בהערכת סמלים. היבטים אלה של המשמעות ניתנים לפיתוח באמצעות פרשנות חוזרת ורפלקציה. מצב זה מוביל לכך שפרשנויות נוטות לעמימות ולהגבלת הבנה. כך מתאפשרים תהליכי העמקה, הרחבת פרשנות והבנה מורכבת יותר של המשמעויות. התהליך מתואר כתהליך הכולל ניטור חזותי והערכה שיטתית. שבהם מופעל משוב רעיוני המכוון פרשנות. ועשויה לתרום לאיזון בין בהירות, גמישות פרשנית והעמקה רעיונית, ולהבנה רעיונית לאורך הקשרים תרבותיים משתנים נוספים.""",
+
+    13: """עד כמה נדדת במחשבותיך מ 1-5?""",
+
+    14: """הצדדים מסכימים כי מסמך זה מהווה הסכם מחייב כולל ואחיד אשר הוראותיו יוצרות מארג נורמטיבי שלם המחייב את הצדדים בכל היבטיו. פרשנות ההסכם תיעשה כמכלול אינטגרטיבי וכותרות הסעיפים נועדו לנוחות בלבד ואינן גורעות מהוראה מהותית כלשהי.  הספק מצהיר כי השירותים ניתנים ללא הקניית זכות קניינית, ללא יצירת מעמד מתמשך ובהתאם לדין כל תשלום שישולם ייחשב כתמורה חוזית בלבד ולא יקנה זכות עתידית או תרופה אוטומטית.""",
+
+    15: """הלקוח מוותר מראש על כל טענה ומצהיר כי השקעותיו נעשות באחריותו הבלעדית. הוראות ההסכם גוברות על כל מסמך אחר וכל מחלוקת תפורש בהתאם ללשון ההסכם ותתברר לפי הדין החל במסגרת ההתקשרות החוזית המחייבת וללא אפשרות לסטייה פרשנית נוספת מצד מי מהצדדים בכל שלב מימוש ההסכם או יישומו המעשי בפועל לאורך תקופת ההתקשרות המוסכמת והמחייבת בין הצדדים כולם במלואה ובתוקף מלא.""",
+
+    16: """עד כמה נדדת במחשבותיך מ 1-5?""",
+
+    17: """משמעות החיים מתוארת כתהליך מתמשך שנבנה מתוך חוויות אישיות ודרכי פרשנות שונות במצבים משתנים. תהליך זה מתואר כמבנה דינמי של ערכים, ולא כעמדה קבועה שאינה משתנה עם הזמן.  המחקר מבחין בין משמעות כללית לבין משמעות תחומית בהקשרים כמו עבודה, קהילה או משפחה,  בעוד שמשמעות כללית מכוונת תפיסת חיים רחבה. שני היבטי המשמעות יכולים להתפתח לאורך החיים דרך התנסויות חוזרות, חשיבה על חוויות ושיקוף עצמי. בלי תחושת משמעות, אנשים עלולים לחוות בלבול, להפחית יוזמה ולהימנע ממעורבות חברתית, לעומת זאת, תחושת משמעות יציבה עשויה לחזק מחויבות, לעודד התמדה ולהרחיב תחומי עשייה. שינויים במשמעות מתוארים כתהליכים של התבוננות עצמית ובחינה של דפוסי חשיבה.  תהליך זה עוזר להכווין בחירות ודרכי פעולה. מחקרים מצביעים על כך שספק קיומי מתון יכול לתרום להתפתחות אישית ולהעמקת ההבנה העצמית לאורך זמן.""",
+
+    18: """עד כמה נדדת במחשבותיך מ 1-5?""", 
+
+    19: """שינה טובה חשובה מאוד לבריאות ולהרגשה הכללית של הגוף והנפש. כשישנים מספיק שעות בלילה, הגוף והמוח נחים, ויש יותר כוח ליום החדש. מבוגרים צריכים לישון מספר קבוע של שעות בכל לילה, וילדים צריכים יותר שעות שינה כדי לגדול, ללמוד ולהתפתח.""",
+
+    20: """שינה רצופה ואיכותית עוזרת לקום בבוקר ערניים, רגועים ומוכנים לפעילויות היום, לכן כדאי ללכת לישון בשעה מוקדמת ולא לדחות את שעת השינה. לפני השינה כדאי לא לשתות קפה, לא לאכול אוכל כבד או להשתמש במסכים,  מכיוון שדברים אלו מקשים על ההרדמות.  רצוי לעשות פעילות גופנית קלה במהלך היום, ולשמור על שגרה קבועה, שתעזור לגוף להירגע ולישון טוב. הקפדה על הרגלי שינה טובים, יוצרת הרגשה טובה. עם הרגלי שינה קבועים, מרגישים פחות עייפים, ומצב הרוח משתפר. מומלץ לשמור על הרגלים קבועים כדי לשפר ריכוז וסבלנות במשימות יום יומיות.""",
+
+    21: """עד כמה נדדת במחשבותיך מ 1-5?""",
+
+    22: """תודה על השתתפותך!"""
+}
+
+# PAGES = {
+#     1: """Raising a dog brings joy and a good feeling to the family every day. Walks are important for the dog's health, mood, and meeting other dogs. It is better to go for several short walks a day rather than one long walk, so the dog is calmer and feels safe in its familiar environment. Playing every day helps the dog release energy, enjoy its time, and feel good and calm throughout the day, so it is advisable to do it frequently. Playing helps create a good bond with family members, so it is important to prepare a quiet and comfortable place for the dog to sleep and provide simple and safe toys.""",
+#     2: """It is advisable to expose the dog to people and noises gradually and give the dog food and water every day. Food should be given in several small meals. Visiting a veterinarian helps maintain the dog's health and quality of life. It is recommended to treat the dog with love and patience, and maintain a consistent routine.""",
+#     3: """How much did your thoughts wander from 1-5?""",
+#     4: """Self-confidence is perceived in the literature as a continuous process, shaped by personal experiences and interpretations in changing contexts. This process is defined as a dynamic component of identity, rather than a fixed trait that does not change over time. The research distinguishes between general confidence and domain-specific confidence in contexts such as work, learning, or parenting, while general confidence is directed towards broad conduct.""",
+#     5: """Domain-specific confidence relates to performance and specific evaluations. Without a sense of confidence, people tend to avoid patterns, whereas established confidence may encourage commitment, perseverance, and expansion of action domains. Changes in confidence are described as processes that include self-monitoring and examining thought patterns, where internal feedback is activated and directed towards choices and strategies. The literature shows that moderate doubt contributes to thinking, continuous learning, and deepening understanding in various social situations.""",
+# }
+
+PROBES = {
+    1: "האם נדדת במחשבותיך?",
+    2: "האם חשוב לטייל ולשחק עם הכלב כל יום?",
+    3: "מוכן להמשיך?",
+    4: "האם נדדת במחשבותיך?",
+    5: "האם נדדת במחשבותיך?",
+    6: "האם הביטחון העצמי יכול להשתנות עם הזמן?",
+    7: "האם נדדת במחשבותיך?",
+    8: "האם ניתן להגביל אחריות לערוצים עתידיים?",
+    9: "מוכן להמשיך?",
+    10: "האם נדדת במחשבותיך?",
+    11: "האם עמימות מוחלטת מעמיקה הבנה רעיונית?",
+    12: "האם נדדת במחשבותיך?",
+    13: "האם בהירות מלאה הכרחית להעמקה פרשנית?",
+    14: "האם נדדת במחשבותיך?",
+    15: "האם נדדת במחשבותיך?",
+    16: "האם ניתן לשנות את יישום ההסכם בפרשנות חיצונית?",
+    17: "האם נדדת במחשבותיך?",
+    18: "האם ספק קיומי פוגע בהתפתחות האישית?",
+    19: "האם נדדת במחשבותיך?",
+    20: "האם נדדת במחשבותיך?",
+    21: "האם הריכוז ומצב הרוח תלויים רק בשינה?",
+}
+
+# PROBES = {
+#     1: "Did your thoughts wander?",
+#     2: "Is it important to walk and play with the dog every day?",
+#     3: "Ready to continue?",
+#     4: "Did your thoughts wander?",
+#     5: "Did your thoughts wander?",
+#     6: "Can self-confidence change over time?"
+# }
 
 # Eye Movement Analysis Settings
-FIXATION_THRESHOLD = 50              # Minimum duration (ms) to count as fixation
+FIXATION_THRESHOLD = 10              # Minimum duration (ms) to count as fixation
 SACCADE_VELOCITY_THRESHOLD = 200    # Minimum velocity (px/s) for saccade detection
 WORD_PROXIMITY_THRESHOLD = 100       # Maximum distance (px) to associate gaze with word
 ANALYSIS_EXPORT_FORMAT = "detailed"  # "detailed" or "simple"
@@ -246,5 +324,5 @@ HEBREW_KEYWORDS = ["של", "את", "על", "אל", "עם", "בין", "אם", "מ
 # RTL (Right-to-Left) Text Configuration
 RTL_READING_DIRECTION = "rtl"  # Direction for RTL text processing
 RTL_AUTO_DETECT = True         # Auto-detect RTL text and adjust eye tracking
-RTL_DETECTION_THRESHOLD = 2    # Minimum Hebrew words to consider text as RTL
+RTL_DETECTION_THRESHOLD = 1    # Minimum Hebrew words to consider text as RTL
 
