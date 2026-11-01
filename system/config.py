@@ -154,7 +154,7 @@ CYAN = (255, 255, 0)
 
 # Text settings
 FONT_SCALE = 1.0
-FONT_THICKNESS = 2
+FONT_THICKNESS = 1
 TEXT_COLOR = WHITE
 ERROR_COLOR = RED
 SUCCESS_COLOR = GREEN
@@ -191,9 +191,9 @@ ZSCORE_THRESHOLD = 3.0
 TEXT_ROWS_PER_PAGE = 3             # Number of text rows per page
 TEXT_WORDS_PER_ROW = 10            # Maximum words per row (used in automatic calculation)
 TEXT_FORCE_WORDS_PER_ROW = 10        # Set to a number (e.g., 5) to force exact words per row, None for automatic
-TEXT_FONT = "arial"                 # Font type (arial, times, calibri, etc.)
+TEXT_FONT = "times"                 # Font type (arial, times, calibri, etc.)
 TEXT_FONT_SIZE = 25               # Font size in points
-TEXT_FONT_BOLD = True               # Bold text (True/False)
+TEXT_FONT_BOLD = False              # Bold text (True/False)
 TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
 TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
 TEXT_LINE_SPACING = 80              # Spacing between lines in pixels
@@ -248,6 +248,14 @@ PAGES = {
     22: """תודה על השתתפותך!"""
 }
 
+# PAGES = {
+#     1: """Raising a dog brings joy and a good feeling to the family every day. Walks are important for the dog's health, mood, and meeting other dogs. It is better to go for several short walks a day rather than one long walk, so the dog is calmer and feels safe in its familiar environment. Playing every day helps the dog release energy, enjoy its time, and feel good and calm throughout the day, so it is advisable to do it frequently. Playing helps create a good bond with family members, so it is important to prepare a quiet and comfortable place for the dog to sleep and provide simple and safe toys.""",
+#     2: """It is advisable to expose the dog to people and noises gradually and give the dog food and water every day. Food should be given in several small meals. Visiting a veterinarian helps maintain the dog's health and quality of life. It is recommended to treat the dog with love and patience, and maintain a consistent routine.""",
+#     3: """How much did your thoughts wander from 1-5?""",
+#     4: """Self-confidence is perceived in the literature as a continuous process, shaped by personal experiences and interpretations in changing contexts. This process is defined as a dynamic component of identity, rather than a fixed trait that does not change over time. The research distinguishes between general confidence and domain-specific confidence in contexts such as work, learning, or parenting, while general confidence is directed towards broad conduct.""",
+#     5: """Domain-specific confidence relates to performance and specific evaluations. Without a sense of confidence, people tend to avoid patterns, whereas established confidence may encourage commitment, perseverance, and expansion of action domains. Changes in confidence are described as processes that include self-monitoring and examining thought patterns, where internal feedback is activated and directed towards choices and strategies. The literature shows that moderate doubt contributes to thinking, continuous learning, and deepening understanding in various social situations.""",
+# }
+
 PROBES = {
     1: "האם נדדת במחשבותיך?",
     2: "האם חשוב לטייל ולשחק עם הכלב כל יום?",
@@ -271,6 +279,15 @@ PROBES = {
     20: "האם נדדת במחשבותיך?",
     21: "האם הריכוז ומצב הרוח תלויים רק בשינה?",
 }
+
+# PROBES = {
+#     1: "Did your thoughts wander?",
+#     2: "Is it important to walk and play with the dog every day?",
+#     3: "Ready to continue?",
+#     4: "Did your thoughts wander?",
+#     5: "Did your thoughts wander?",
+#     6: "Can self-confidence change over time?"
+# }
 
 # Eye Movement Analysis Settings
 FIXATION_THRESHOLD = 10              # Minimum duration (ms) to count as fixation
