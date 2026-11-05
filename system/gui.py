@@ -10,6 +10,7 @@ from tkinter import ttk, messagebox, filedialog
 import threading
 import time
 import os
+import re
 import sys
 from datetime import datetime
 from typing import Optional
@@ -116,14 +117,38 @@ class GazeTrackingGUI:
         user_frame = ttk.LabelFrame(parent, text="User Information", padding="10")
         user_frame.pack(fill="x", pady=(0, 10))
         
-        # Name input
-        name_frame = ttk.Frame(user_frame)
-        name_frame.pack(fill="x")
+        # Participant details
+        details_frame = ttk.Frame(user_frame)
+        details_frame.pack(fill="x")
         
-        ttk.Label(name_frame, text="Participant Name:").pack(side="left")
-        self.name_var = tk.StringVar()
-        self.name_entry = ttk.Entry(name_frame, textvariable=self.name_var, width=30)
-        self.name_entry.pack(side="left", padx=(10, 0))
+        ttk.Label(details_frame, text="First Name:").grid(row=0, column=0, sticky="w", pady=2)
+        self.first_name_var = tk.StringVar()
+        self.first_name_entry = ttk.Entry(details_frame, textvariable=self.first_name_var, width=30)
+        self.first_name_entry.grid(row=0, column=1, sticky="w", padx=(10, 0), pady=2)
+
+        ttk.Label(details_frame, text="Surname:").grid(row=1, column=0, sticky="w", pady=2)
+        self.surname_var = tk.StringVar()
+        self.surname_entry = ttk.Entry(details_frame, textvariable=self.surname_var, width=30)
+        self.surname_entry.grid(row=1, column=1, sticky="w", padx=(10, 0), pady=2)
+
+        ttk.Label(details_frame, text="ID Number:").grid(row=2, column=0, sticky="w", pady=2)
+        self.id_number_var = tk.StringVar()
+        self.id_number_entry = ttk.Entry(details_frame, textvariable=self.id_number_var, width=30)
+        self.id_number_entry.grid(row=2, column=1, sticky="w", padx=(10, 0), pady=2)
+
+        ttk.Label(details_frame, text="Group:").grid(row=3, column=0, sticky="w", pady=2)
+        group_frame = ttk.Frame(details_frame)
+        group_frame.grid(row=3, column=1, sticky="w", padx=(10, 0), pady=2)
+
+        # No default group, so the experimenter has to choose one
+        self.group_var = tk.StringVar(value="none")
+        self.group_regular_button = ttk.Radiobutton(group_frame, text="R (regular group)", variable=self.group_var, value="R")
+        self.group_regular_button.pack(side="left")
+        ttk.Radiobutton(group_frame, text="G (flexible group)", variable=self.group_var, value="G").pack(side="left", padx=(10, 0))
+
+        ttk.Label(details_frame, text="ADHD:").grid(row=4, column=0, sticky="w", pady=2)
+        self.adhd_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(details_frame, variable=self.adhd_var).grid(row=4, column=1, sticky="w", padx=(10, 0), pady=2)
         
         # Session info
         info_frame = ttk.Frame(user_frame)
@@ -314,10 +339,22 @@ class GazeTrackingGUI:
         
     def validate_inputs(self) -> bool:
         """Validate user inputs"""
-        if not self.name_var.get().strip():
-            messagebox.showerror("Invalid Input", "Please enter participant name")
-            self.name_entry.focus()
-            return False
+        details_checks = [
+            (re.fullmatch(r"[A-Za-z]+", self.first_name_var.get().strip()),
+             "First name is required and must use English letters only", self.first_name_entry),
+            (re.fullmatch(r"[A-Za-z]+", self.surname_var.get().strip()),
+             "Surname is required and must use English letters only", self.surname_entry),
+            (re.fullmatch(r"[0-9]{9}", self.id_number_var.get().strip()),
+             "ID number is required and must be exactly 9 digits", self.id_number_entry),
+            (self.group_var.get() in ("R", "G"),
+             "Please select a group", self.group_regular_button),
+        ]
+
+        for is_valid, message, widget in details_checks:
+            if not is_valid:
+                messagebox.showerror("Invalid Input", message)
+                widget.focus()
+                return False
             
         # Check camera availability
         import cv2
@@ -332,8 +369,14 @@ class GazeTrackingGUI:
         
     def create_session_directory(self):
         """Create user session directory"""
-        self.user_name = self.name_var.get().strip().replace(" ", "_")
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.user_name = "_".join([
+            self.first_name_var.get().strip(),
+            self.surname_var.get().strip(),
+            self.id_number_var.get().strip(),
+            self.group_var.get(),
+            "ADHD" if self.adhd_var.get() else "NoADHD"
+        ])
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.session_dir = os.path.join(USER_DATA_DIR, f"{self.user_name}_{timestamp}")
         
         # Create directories
