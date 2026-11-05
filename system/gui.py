@@ -19,6 +19,7 @@ from typing import Optional
 # Import all system modules
 from config import *
 from calibration import GazeCalibrator, pixels_to_degrees
+from text_layout import paginate_text
 from model_training import GazeModelTrainer
 from prediction import TextReadingGazePredictor
 from eye_movement_analyzer import EyeMovementAnalyzer
@@ -358,6 +359,14 @@ class GazeTrackingGUI:
                 widget.focus()
                 return False
             
+        # A text setting that can't fit must stop the session here, not after calibration
+        try:
+            for text in PAGES.values():
+                paginate_text(text)
+        except ValueError as e:
+            messagebox.showerror("Text Layout Error", str(e))
+            return False
+
         # Check camera availability
         import cv2
         camera = cv2.VideoCapture(CAMERA_INDEX)
@@ -641,7 +650,7 @@ Current Configuration:
 • Calibration Points: {CALIBRATION_GRID_SIZE}×{CALIBRATION_GRID_SIZE}
 • Face Detection Confidence: {FACE_DETECTION_CONFIDENCE}
 • Text Rows Per Page: {TEXT_ROWS_PER_PAGE}
-• Words Per Row: {TEXT_WORDS_PER_ROW}
+• Text Margin: {TEXT_MARGIN_X}
         """
         
         text_widget = tk.Text(settings_window, wrap="word", height=15)

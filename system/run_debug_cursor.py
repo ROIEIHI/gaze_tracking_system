@@ -94,7 +94,7 @@ class DebugGazePredictor(TextReadingGazePredictor):
                         self.current_page -= 1
                         print(f"Moved to page {self.current_page + 1}")
                 elif key == ord('d') or key == ord('D'):
-                    if self.current_page < self.total_pages - 1: 
+                    if self.current_page < len(self.reading_sequence) - 1: 
                         self.current_page += 1
                         print(f"Moved to page {self.current_page + 1}")
                 elif key == ord('e') or key == ord('E'):

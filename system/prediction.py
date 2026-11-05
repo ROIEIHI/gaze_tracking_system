@@ -15,7 +15,8 @@ from typing import Tuple, Optional, List, Dict
 from config import *
 from eye_movement_analyzer import EyeMovementAnalyzer, GazePoint, MovementMetrics
 import pandas as pd
-from PIL import ImageFont, ImageDraw, Image
+from PIL import ImageDraw, Image
+from text_layout import load_text_font, paginate_text, render_page
 import os
 import re
 import threading
@@ -234,6 +235,8 @@ class TextReadingGazePredictor:
         self.total_pages = 0
         self.text_pages = []
         self.word_positions = []
+        self.page_image = None
+        self.cached_page = None
         
         # Eye movement analysis
         self.movement_analyzer = EyeMovementAnalyzer(
@@ -306,66 +309,16 @@ class TextReadingGazePredictor:
         self.reading_sequence = []
         self.total_pages = 0
         
-        # Get sorted page IDs
-        page_ids = sorted(PAGES.keys())
-        
-        for page_id in page_ids:
-            text = PAGES[page_id]
-            
-            # --- Text Processing Logic (similar to original) ---
-            words = text.strip().split()
-            
-            # Detect Hebrew/RTL (simplified for per-page check)
-            hebrew_count = sum(1 for word in words[:20] if any(keyword in word for keyword in HEBREW_KEYWORDS))
-            is_rtl = hebrew_count >= RTL_DETECTION_THRESHOLD if RTL_AUTO_DETECT else False
-            
-            # Calculate layout
-            font = cv2.FONT_HERSHEY_SIMPLEX
-            font_scale = TEXT_FONT_SIZE / 32.0
-            thickness = 4 if TEXT_FONT_BOLD else 2
-            char_width = cv2.getTextSize("A", font, font_scale, thickness)[0][0]
-            margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
-            available_width = SCREEN_WIDTH - 2 * margin_x
-            
-            if TEXT_FORCE_WORDS_PER_ROW is not None:
-                words_per_row = TEXT_FORCE_WORDS_PER_ROW
-            else:
-                estimated_chars = available_width // char_width
-                words_per_row = max(6, min(TEXT_WORDS_PER_ROW, estimated_chars // 5)) # approx 5 chars/word
-            
-            words_per_page = TEXT_ROWS_PER_PAGE * words_per_row
-            
-            # Split into visual pages
-            current_page_words = []
-            page_rows_list = []
-            
-            for i, word in enumerate(words):
-                current_page_words.append(word)
-                if len(current_page_words) >= words_per_page or i == len(words) - 1:
-                    # Organize into rows
-                    rows = []
-                    current_row = []
-                    for w in current_page_words:
-                        current_row.append(w)
-                        if len(current_row) >= words_per_row:
-                            rows.append(current_row)
-                            current_row = []
-                    if current_row:
-                        rows.append(current_row)
-                    
-                    page_rows_list.append(rows)
-                    current_page_words = []
-            
+        for page_id in sorted(PAGES.keys()):
             # Add Visual Pages to Sequence
-            for rows in page_rows_list:
+            for rows in paginate_text(PAGES[page_id]):
                 self.reading_sequence.append({
                     'type': 'page',
                     'id': page_id,
-                    'content': rows,
-                    'is_rtl': is_rtl
+                    'content': rows
                 })
                 self.total_pages += 1
-            
+
             # Add Probe if exists for this page
             if page_id in PROBES:
                 self.reading_sequence.append({
@@ -377,37 +330,22 @@ class TextReadingGazePredictor:
         print(f"Created sequence with {len(self.reading_sequence)} steps ({self.total_pages} visual pages)")
 
     def _render_text_page(self) -> np.ndarray:
-        """Render current text page"""
-        background = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
-        
+        """Render current text page. A page is drawn once and reused, callers get a copy to draw on"""
         if self.current_page >= len(self.reading_sequence):
-            return background
-            
+            return np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
+
         step = self.reading_sequence[self.current_page]
-        
+
         if step['type'] == 'probe':
+            background = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
             return self._render_probe(step, background)
-            
-        # --- Render Text Page ---
-        page_rows = step['content']
-        is_rtl = step.get('is_rtl', False)
-        
-        margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
-        margin_y = int(SCREEN_HEIGHT * TEXT_MARGIN_Y)
-        text_width = SCREEN_WIDTH - 2 * margin_x
-        
-        font = cv2.FONT_HERSHEY_SIMPLEX if not TEXT_FONT_BOLD else cv2.FONT_HERSHEY_DUPLEX
-        font_scale = TEXT_FONT_SIZE / 32.0
-        thickness = 3 if TEXT_FONT_BOLD else 2
-        
-        self.word_positions = []
-        
-        for row_idx, row_words in enumerate(page_rows):
-            y = margin_y + row_idx * TEXT_LINE_SPACING + int(TEXT_FONT_SIZE)
-            self._render_row_with_width_check(background, row_words, margin_x, y, font, font_scale, thickness, row_idx, text_width, is_rtl)
-            
-        self._draw_navigation_info(background)
-        return background
+
+        if self.cached_page != self.current_page:
+            self.page_image, self.word_positions = render_page(step['content'], self.current_page)
+            self._draw_navigation_info(self.page_image)
+            self.cached_page = self.current_page
+
+        return self.page_image.copy()
 
     def _render_probe(self, step, image):
         """Render probe dialog"""
@@ -474,131 +412,7 @@ class TextReadingGazePredictor:
                 
         return image
 
-    def _render_row_with_width_check(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, max_width, is_hebrew_layout=False):
-        """Render a row of text with width constraints and proper word wrapping"""
-        
-        # Check if this row contains Hebrew
-        hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
-        contains_hebrew = any(hebrew_pattern.search(word) for word in words)
-        
-        # Force Hebrew rendering if the page layout is RTL (even for English words on a Hebrew page)
-        if contains_hebrew or is_hebrew_layout:
-            # For Hebrew text, calculate right-aligned position for RTL layout
-            if is_hebrew_layout:
-                # Calculate right boundary for RTL text - use screen right edge minus small margin
-                margin_x = int(SCREEN_WIDTH * TEXT_MARGIN_X)
-                right_boundary = SCREEN_WIDTH - margin_x  # Use right edge of screen area
-                
-                self._render_row_with_positions(image, words, right_boundary, start_y, font, font_scale, thickness, row_idx, rtl_layout=True)
-            else:
-                # Standard left-aligned Hebrew (for mixed content)
-                self._render_row_with_positions(image, words, start_x, start_y, font, font_scale, thickness, row_idx)
-            return
-        
-        # For English text, check if all words fit in the available width
-        total_text = " ".join(words)
-        total_size = cv2.getTextSize(total_text, font, font_scale, thickness)[0]
-        
-        if total_size[0] <= max_width:
-            # All words fit - render normally with centering
-            x = start_x + (max_width - total_size[0]) // 2
-            self._render_row_with_positions(image, words, x, start_y, font, font_scale, thickness, row_idx)
-        else:
-            # Words don't fit - need to wrap or truncate
-            fitted_words = []
-            current_width = 0
-            
-            for word in words:
-                word_size = cv2.getTextSize(word + " ", font, font_scale, thickness)[0]
-                
-                if current_width + word_size[0] <= max_width:
-                    fitted_words.append(word)
-                    current_width += word_size[0]
-                else:
-                    break  # Stop adding words when they don't fit
-            
-            if fitted_words:
-                # Render fitted words with even spacing
-                self._render_fitted_row(image, fitted_words, start_x, start_y, font, font_scale, thickness, row_idx, max_width)
-    
-    def _render_fitted_row(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, max_width):
-        """Render words with even distribution across available width"""
-        if not words:
-            return
-        
-        if len(words) == 1:
-            # Single word - center it
-            # Check if this is Hebrew and use appropriate rendering
-            hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
-            if hebrew_pattern.search(words[0]):
-                #print(f"DEBUG: Single Hebrew word in fitted row: '{words[0]}'")
-                # Use Hebrew rendering for single word
-                self._render_row_with_positions(image, words, start_x, start_y, font, font_scale, thickness, row_idx)
-                return
-            else:
-                # English word - use OpenCV
-                word_size = cv2.getTextSize(words[0], font, font_scale, thickness)[0]
-                x = start_x + (max_width - word_size[0]) // 2
-                cv2.putText(image, words[0], (x, start_y), font, font_scale, TEXT_COLOR, thickness)
-            
-            # Store word position
-            self.word_positions.append({
-                'word': words[0],
-                'x': x + word_size[0] // 2,
-                'y': start_y - word_size[1] // 2,
-                'row': row_idx,
-                'col': 0,
-                'width': word_size[0],
-                'height': word_size[1],
-                'page': self.current_page
-            })
-            return
-        
-        # Calculate total word width
-        total_word_width = sum(cv2.getTextSize(word, font, font_scale, thickness)[0][0] for word in words)
-        
-        # Calculate spacing between words
-        available_space = max_width - total_word_width
-        space_between_words = available_space // (len(words) - 1) if len(words) > 1 else 0
-        
-        # Check if any word is Hebrew - if so, use Hebrew rendering for entire row
-        hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
-        contains_hebrew = any(hebrew_pattern.search(word) for word in words)
-        
-        if contains_hebrew:
-            #print(f"DEBUG: Hebrew words in fitted row: {words}")
-            # Use Hebrew rendering for entire row instead of word-by-word
-            self._render_row_with_positions(image, words, start_x, start_y, font, font_scale, thickness, row_idx)
-            return
-        
-        # English words - render with calculated spacing
-        current_x = start_x
-        
-        for word_idx, word in enumerate(words):
-            word_size = cv2.getTextSize(word, font, font_scale, thickness)[0]
-            
-            # Render word (English only at this point)
-            cv2.putText(image, word, (current_x, start_y), font, font_scale, TEXT_COLOR, thickness)
-            
-            # Store word position
-            word_center_x = current_x + word_size[0] // 2
-            word_center_y = start_y - word_size[1] // 2
-            
-            self.word_positions.append({
-                'word': word,
-                'x': word_center_x,
-                'y': word_center_y,
-                'row': row_idx,
-                'col': word_idx,
-                'width': word_size[0],
-                'height': word_size[1],
-                'page': self.current_page
-            })
-            
-            # Move to next word position
-            current_x += word_size[0] + space_between_words
-
-    def _render_hebrew_text(self, text, position, font_size = TEXT_FONT_SIZE, color = TEXT_COLOR, background_image = None, image_width =SCREEN_WIDTH, image_height = SCREEN_HEIGHT, rtl_align=False, centered=False):
+    def _render_hebrew_text(self, text, position, font_size = TEXT_FONT_SIZE, color = TEXT_COLOR, background_image = None, image_width =SCREEN_WIDTH, image_height = SCREEN_HEIGHT, centered=False):
         """Render Hebrew text using PIL and convert to OpenCV format"""
         try:
             # Detect if text contains Hebrew characters
@@ -616,47 +430,9 @@ class TextReadingGazePredictor:
             
             draw = ImageDraw.Draw(pil_image)
 
-            # Load Hebrew-compatible font - be more aggressive about finding fonts
-            hebrew_font = None
-            hebrew_font_paths = [
-                "C:/Windows/Fonts/david.ttf",    # Best Hebrew font
-                "C:/Windows/Fonts/tahoma.ttf",   # Excellent Hebrew support
-                "C:/Windows/Fonts/arial.ttf",   # Good Hebrew support
-                "C:/Windows/Fonts/calibri.ttf", # Good Hebrew support
-                "tahoma.ttf", "arial.ttf", "calibri.ttf"  # System font fallbacks
-            ]
+            hebrew_font = load_text_font(font_size)
 
-            font_loaded = False
-            for font_path in hebrew_font_paths:
-                try:
-                    # Test if the font actually supports Hebrew by trying to render a Hebrew character
-                    test_font = ImageFont.truetype(font_path, font_size)
-                    
-                    # Test render a simple Hebrew character
-                    test_img = Image.new("RGB", (50, 50), (255, 255, 255))
-                    test_draw = ImageDraw.Draw(test_img)
-                    test_draw.text((10, 10), "ה", font=test_font, fill=(0, 0, 0))
-                    
-                    # If we get here without exception, the font works
-                    hebrew_font = test_font
-                    #print(f"DEBUG: Successfully loaded and tested Hebrew font: {os.path.basename(font_path)}")
-                    font_loaded = True
-                    break
-                    
-                except Exception as e:
-                    #print(f"DEBUG: Font {font_path} failed: {e}")
-                    continue
-            
-            if not font_loaded:
-                #print("DEBUG: No Hebrew font found, using default - Hebrew may show as ???")
-                hebrew_font = ImageFont.load_default()
-                
-                # Try one more fallback with a larger default font
-                try:
-                    hebrew_font = ImageFont.truetype("arial.ttf", font_size)
-                    #print("DEBUG: Using system arial.ttf as final fallback")
-                except:
-                    pass            # Handle RTL text properly
+            # Handle RTL text properly
             display_text = text
             if contains_hebrew:
                 try:
@@ -681,22 +457,18 @@ class TextReadingGazePredictor:
             # Adjust position for alignment if needed
             render_position = position
             
-            if rtl_align or centered:
+            if centered:
                 # Calculate text dimensions
                 bbox = draw.textbbox((0, 0), display_text, font=hebrew_font)
                 text_width = bbox[2] - bbox[0]
-                
-                if centered:
-                    # Center text around position[0]
-                    text_start_x = position[0] - text_width // 2
-                else:
-                    # Right align: position[0] is the RIGHT boundary
-                    text_start_x = position[0] - text_width
-                    
+
+                # Center text around position[0]
+                text_start_x = position[0] - text_width // 2
+
                 # Ensure proper left margin constraint
                 final_x = max(text_start_x, 50)
                 render_position = (final_x, position[1])
-            
+
             # Render text
             #print(f"DEBUG: Rendering at position {render_position} with font size {font_size}")
             draw.text(render_position, display_text, font=hebrew_font, fill=color)
@@ -719,225 +491,6 @@ class TextReadingGazePredictor:
                 return background_image
             else:
                 return np.zeros((image_height, image_width, 3), dtype=np.uint8)
-
-    def _render_row_with_positions(self, image, words, start_x, start_y, font, font_scale, thickness, row_idx, rtl_layout=False):
-        """Render a row of text with Hebrew support and capture precise word positions"""
-        
-        # Check if any word contains Hebrew - be very thorough
-        hebrew_pattern = re.compile(r'[\u0590-\u05FF]')
-        contains_hebrew = any(hebrew_pattern.search(word) for word in words)
-        
-        # Double check - if we have Hebrew characters anywhere, force Hebrew rendering
-        row_text_check = " ".join(words)
-        if not contains_hebrew and hebrew_pattern.search(row_text_check):
-            contains_hebrew = True
-        
-        if contains_hebrew:
-            # Use PIL for Hebrew text rendering
-            row_text = " ".join(words)
-            
-            # Calculate position for PIL (PIL uses top-left, OpenCV uses bottom-left)
-            pil_y = start_y - TEXT_FONT_SIZE  # Adjust for baseline difference
-            
-            # For RTL layout, start_x is the RIGHT boundary where text should END
-            render_x = start_x
-            
-            # Render entire row with PIL
-            rendered_image = self._render_hebrew_text(
-                text=row_text,
-                position=(render_x, pil_y),
-                font_size=TEXT_FONT_SIZE,
-                color=TEXT_COLOR,
-                background_image=image,
-                image_width=SCREEN_WIDTH,
-                image_height=SCREEN_HEIGHT,
-                rtl_align=rtl_layout
-            )
-            
-            # Explicitly copy the rendered image back
-            if rendered_image is not None:
-                image[:] = rendered_image
-            else:
-                # Emergency fallback - try simple PIL rendering without RTL
-                try:
-                    from PIL import ImageFont, ImageDraw, Image
-                    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
-                    draw = ImageDraw.Draw(pil_image)
-                    try:
-                        hebrew_font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", TEXT_FONT_SIZE)
-                    except:
-                        hebrew_font = ImageFont.load_default()
-                    draw.text((start_x, pil_y), row_text, font=hebrew_font, fill=TEXT_COLOR)
-                    emergency_image = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
-                    image[:] = emergency_image
-                except Exception as emergency_e:
-                    cv2.putText(image, "Hebrew text (display error)", (start_x, start_y), font, font_scale, (0, 0, 255), thickness)
-            
-            # Calculate word positions for Hebrew using PIL font metrics to match visual rendering
-            try:
-                from PIL import ImageFont, ImageDraw, Image
-                # Use the same font loading logic as _render_hebrew_text
-                hebrew_font = None
-                hebrew_font_paths = [
-                    "C:/Windows/Fonts/david.ttf", "C:/Windows/Fonts/tahoma.ttf", 
-                    "C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/calibri.ttf"
-                ]
-                
-                for font_path in hebrew_font_paths:
-                    try:
-                        hebrew_font = ImageFont.truetype(font_path, TEXT_FONT_SIZE)
-                        break
-                    except:
-                        continue
-                
-                if hebrew_font is None:
-                    hebrew_font = ImageFont.load_default()
-                
-                # Create a temporary draw object to measure text
-                temp_image = Image.new("RGB", (100, 100), (255, 255, 255))
-                draw = ImageDraw.Draw(temp_image)
-                
-                # Calculate RTL positions matching _render_hebrew_text logic
-                if rtl_layout:
-                    # For RTL: calculate total text width and position from right
-                    full_text = " ".join(words)
-                    
-                    # Apply RTL processing like in _render_hebrew_text
-                    try:
-                        from bidi.algorithm import get_display
-                        import arabic_reshaper
-                        reshaped_text = arabic_reshaper.reshape(full_text)
-                        display_text = get_display(reshaped_text)
-                    except:
-                        # Fallback: simple word reversal
-                        display_words = list(reversed(words))
-                        display_text = ' '.join(display_words)
-                    
-                    # Get total text width
-                    bbox = draw.textbbox((0, 0), display_text, font=hebrew_font)
-                    total_text_width = bbox[2] - bbox[0]
-                    
-                    # For RTL: start_x is the RIGHT boundary, calculate text start position
-                    text_start_x = start_x - total_text_width
-                    final_x = max(text_start_x, 50)  # Ensure left margin
-                    
-                    # Calculate individual word positions in RTL order
-                    current_x = final_x
-                    display_words = display_text.split()
-                    
-                    for word_idx, display_word in enumerate(display_words):
-                        # Find corresponding original word (RTL reverses order)
-                        original_word_idx = len(words) - 1 - word_idx
-                        original_word = words[original_word_idx] if original_word_idx >= 0 else display_word
-                        
-                        # Get actual word width using PIL
-                        word_bbox = draw.textbbox((0, 0), display_word, font=hebrew_font)
-                        word_width = word_bbox[2] - word_bbox[0]
-                        
-                        # Calculate word center position
-                        word_center_x = current_x + word_width // 2
-                        word_center_y = start_y - TEXT_FONT_SIZE // 2
-                        
-                        self.word_positions.append({
-                            'word': original_word,
-                            'x': word_center_x,
-                            'y': word_center_y,
-                            'row': row_idx,
-                            'col': original_word_idx,
-                            'width': int(word_width),
-                            'height': TEXT_FONT_SIZE,
-                            'page': self.current_page
-                        })
-                        
-                        # Move to next word position (left-to-right in display order)
-                        current_x += word_width
-                        if word_idx < len(display_words) - 1:
-                            space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
-                            current_x += space_bbox[2] - space_bbox[0]
-                else:
-                    # For LTR Hebrew (mixed content): use left-aligned positions
-                    current_x = start_x
-                    for word_idx, word in enumerate(words):
-                        # Get actual word width using PIL
-                        word_bbox = draw.textbbox((0, 0), word, font=hebrew_font)
-                        word_width = word_bbox[2] - word_bbox[0]
-                        
-                        # Calculate word center position
-                        word_center_x = current_x + word_width // 2
-                        word_center_y = start_y - TEXT_FONT_SIZE // 2
-                        
-                        self.word_positions.append({
-                            'word': word,
-                            'x': word_center_x,
-                            'y': word_center_y,
-                            'row': row_idx,
-                            'col': word_idx,
-                            'width': int(word_width),
-                            'height': TEXT_FONT_SIZE,
-                            'page': self.current_page
-                        })
-                        
-                        # Move to next word position
-                        current_x += word_width
-                        if word_idx < len(words) - 1:
-                            space_bbox = draw.textbbox((0, 0), " ", font=hebrew_font)
-                            current_x += space_bbox[2] - space_bbox[0]
-                            
-            except Exception as e:
-                print(f"ERROR in Hebrew word position calculation: {e}")
-                # Fallback to simple approximation
-                current_x = start_x
-                font_size_px = TEXT_FONT_SIZE * 0.6
-                
-                for word_idx, word in enumerate(words):
-                    word_width = len(word) * font_size_px * 0.8 if hebrew_pattern.search(word) else len(word) * font_size_px * 0.6
-                    word_center_x = current_x + word_width // 2
-                    word_center_y = start_y - font_size_px // 2
-                    
-                    self.word_positions.append({
-                        'word': word,
-                        'x': word_center_x,
-                        'y': word_center_y,
-                        'row': row_idx,
-                        'col': word_idx,
-                        'width': int(word_width),
-                        'height': TEXT_FONT_SIZE,
-                        'page': self.current_page
-                    })
-                    
-                    current_x += word_width + font_size_px * 0.3
-        
-        else:
-            # Use original OpenCV rendering for English
-            current_x = start_x
-            
-            for word_idx, word in enumerate(words):
-                # Get word dimensions
-                word_size = cv2.getTextSize(word, font, font_scale, thickness)[0]
-                
-                # Render word
-                cv2.putText(image, word, (current_x, start_y), font, font_scale, TEXT_COLOR, thickness)
-                
-                # Store word position for analysis
-                word_center_x = current_x + word_size[0] // 2
-                word_center_y = start_y - word_size[1] // 2
-                
-                self.word_positions.append({
-                    'word': word,
-                    'x': word_center_x,
-                    'y': word_center_y,
-                    'row': row_idx,
-                    'col': word_idx,
-                    'width': word_size[0],
-                    'height': word_size[1],
-                    'page': self.current_page
-                })
-                
-                # Move to next word position
-                current_x += word_size[0]
-                if word_idx < len(words) - 1:  # Add space except for last word
-                    space_size = cv2.getTextSize(" ", font, font_scale, thickness)[0]
-                    current_x += space_size[0]
 
     def _draw_navigation_info(self, image):
         """Draw page navigation and controls"""

@@ -201,17 +201,19 @@ ZSCORE_THRESHOLD = 3.0
 SHOW_GAZE_POINT = False            # Show the live gaze point to the participant during reading (gaze is recorded either way)
 
 # Text Display Control
-TEXT_ROWS_PER_PAGE = 3             # Number of text rows per page
-TEXT_WORDS_PER_ROW = 10            # Maximum words per row (used in automatic calculation)
-TEXT_FORCE_WORDS_PER_ROW = 10        # Set to a number (e.g., 5) to force exact words per row, None for automatic
-TEXT_FONT = "times"                 # Font type (arial, times, calibri, etc.)
-TEXT_FONT_SIZE = 25               # Font size in points
-TEXT_FONT_BOLD = False              # Bold text (True/False)
+TEXT_ROWS_PER_PAGE = 4             # Number of text rows per page
+TEXT_FONT_PATHS = [                 # Hebrew fonts, the first one that loads is used
+    "C:/Windows/Fonts/david.ttf",
+    "C:/Windows/Fonts/tahoma.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/calibri.ttf"
+]
+TEXT_FONT_SIZE = 40               # Font size in points
 TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
 TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
-TEXT_LINE_SPACING = 80              # Spacing between lines in pixels
-TEXT_MARGIN_X = 0.2                # Horizontal margin (10% from edges)
-TEXT_MARGIN_Y = 0.35                # Vertical margin (35% from edges)
+TEXT_LINE_SPACING = 120              # Spacing between lines in pixels
+TEXT_MARGIN_X = 0.1                # Horizontal margin (10% from each edge)
+TEXT_MARGIN_Y = 0.22               # Top margin (22% of the screen height), the first row starts here on every page
 
 # Reading Text Content (100+ words - easily customizable)
 # Reading Content - Pages and Probes
@@ -325,17 +327,9 @@ CSV_COLUMNS = [
 # ============================================================================
 
 # Hebrew/RTL text settings
-HEBREW_SUPPORT = True
-HEBREW_FONT_PATH = None  # Will auto-detect system Hebrew font
-HEBREW_FONT_SIZE = 32
-TEXT_DIRECTION = "auto"  # "auto", "ltr", "rtl"
 
 
-# Auto language detection (simple keyword-based)
-HEBREW_KEYWORDS = ["של", "את", "על", "אל", "עם", "בין", "אם", "מה", "זה", "הוא"]
 
 # RTL (Right-to-Left) Text Configuration
 RTL_READING_DIRECTION = "rtl"  # Direction for RTL text processing
-RTL_AUTO_DETECT = True         # Auto-detect RTL text and adjust eye tracking
-RTL_DETECTION_THRESHOLD = 1    # Minimum Hebrew words to consider text as RTL
 

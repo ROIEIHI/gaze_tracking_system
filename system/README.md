@@ -91,6 +91,7 @@ system/
 ├── main.py                   # Command line interface
 ├── calibration.py            # Strategic calibration system
 ├── model_training.py         # RandomForest training pipeline
+├── text_layout.py            # Hebrew text wrapping, pagination and page drawing
 ├── prediction.py             # RTL-aware prediction and text analysis
 ├── eye_movement_analyzer.py  # Kalman filtering and movement analysis
 ├── config.py                 # System configuration parameters
