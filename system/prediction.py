@@ -1541,9 +1541,7 @@ class TextReadingGazePredictor:
             print("=" * 60)
         
         self.session_start_time = time.time()
-        frame_count = 0
-        fps_start = time.time()
-        
+
         try:
             while True:
                 ret, frame = self.camera.read()
@@ -1561,7 +1559,10 @@ class TextReadingGazePredictor:
                 
                 # Create text display
                 text_display = self._render_text_page()
-                
+
+                # The overlay recording always carries the gaze markers, whatever the participant sees
+                recorded_display = text_display.copy()
+
                 if prediction:
                     pred_x, pred_y = prediction
                     
@@ -1582,12 +1583,12 @@ class TextReadingGazePredictor:
                         self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
                     else:
                         # Optional: Add marker for probe
-                        cv2.circle(text_display, (SCREEN_WIDTH-30, 30), 10, (0, 255, 255), -1)
-                    
+                        cv2.circle(recorded_display, (SCREEN_WIDTH-30, 30), 10, (0, 255, 255), -1)
+
                     # Draw gaze point (semi-transparent)
-                    overlay = text_display.copy()
+                    overlay = recorded_display.copy()
                     cv2.circle(overlay, (smoothed_x, smoothed_y), 12, (255, 0, 0), -1)
-                    cv2.addWeighted(overlay, 0.6, text_display, 0.4, 0, text_display)
+                    cv2.addWeighted(overlay, 0.6, recorded_display, 0.4, 0, recorded_display)
                 else:
                     # print("DEBUG: No prediction")
                     overlay = text_display.copy()
@@ -1595,16 +1596,11 @@ class TextReadingGazePredictor:
                 # Record overlay frame (after all processing)
                 if self.video_recorder and RECORD_OVERLAY_DISPLAY:
                     # print("DEBUG: Recording overlay frame")
-                    self.video_recorder.record_frame(overlay_frame=text_display)
-                
-                # Calculate and display FPS
-                frame_count += 1
-                if frame_count % 30 == 0:
-                    fps = 30 / (time.time() - fps_start)
-                    fps_start = time.time()
-                    cv2.putText(text_display, f"FPS: {fps:.1f}", (20, 40), 
-                               cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
-                
+                    self.video_recorder.record_frame(overlay_frame=recorded_display)
+
+                if SHOW_GAZE_POINT:
+                    text_display = recorded_display
+
                 cv2.imshow('Text Reading Analysis', text_display)
                 
                 # Handle key presses

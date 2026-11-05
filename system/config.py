@@ -187,6 +187,9 @@ ZSCORE_THRESHOLD = 3.0
 # ============================================================================
 # EYE ANALYSIS AND READING SETTINGS
 # ============================================================================
+# Gaze Point Display
+SHOW_GAZE_POINT = False            # Show the live gaze point to the participant during reading (gaze is recorded either way)
+
 # Text Display Control
 TEXT_ROWS_PER_PAGE = 3             # Number of text rows per page
 TEXT_WORDS_PER_ROW = 10            # Maximum words per row (used in automatic calculation)
