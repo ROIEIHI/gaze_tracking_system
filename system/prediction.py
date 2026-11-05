@@ -19,7 +19,7 @@ from PIL import ImageFont, ImageDraw, Image
 import os
 import re
 import threading
-from queue import Queue
+from queue import Queue, Full
 import json
 
 class VideoRecorder:
@@ -34,12 +34,13 @@ class VideoRecorder:
         self.is_recording = False
         self.camera_path = None
         self.overlay_path = None
+        self.fps = VIDEO_FPS
+        self.camera_resolution = f"{CAMERA_WIDTH}x{CAMERA_HEIGHT}"
         
-        # Threading for async writing (optional performance enhancement)
-        self.camera_queue = Queue(maxsize=VIDEO_BUFFER_SIZE) if VIDEO_RECORDING_ENABLED else None
-        self.overlay_queue = Queue(maxsize=VIDEO_BUFFER_SIZE) if VIDEO_RECORDING_ENABLED else None
+        # Encoding runs on its own thread so it never holds up gaze tracking
+        self.frame_queue = Queue(maxsize=VIDEO_BUFFER_SIZE)
         self.write_thread = None
-        self.stop_event = threading.Event()
+        self.frames_dropped = 0
         
     def start_recording(self, fps: int = VIDEO_FPS) -> tuple:
         """Start video recording and return file paths"""
@@ -58,10 +59,8 @@ class VideoRecorder:
             # Initialize video writers
             fourcc = cv2.VideoWriter_fourcc(*VIDEO_CODEC)
             
-            if RECORD_CAMERA_FEED and self.camera_path:
-                self.camera_writer = cv2.VideoWriter(
-                    self.camera_path, fourcc, fps, (CAMERA_WIDTH, CAMERA_HEIGHT)
-                )
+            # The camera writer opens on the first frame, see record_frame
+            self.fps = fps
                 
             if RECORD_OVERLAY_DISPLAY and self.overlay_path:
                 self.overlay_writer = cv2.VideoWriter(
@@ -69,6 +68,8 @@ class VideoRecorder:
                 )
             
             self.is_recording = True
+            self.write_thread = threading.Thread(target=self._write_frames, daemon=True)
+            self.write_thread.start()
             print(f"Video recording started:")
             if self.camera_path:
                 print(f"  Camera feed: {os.path.basename(self.camera_path)}")
@@ -83,21 +84,45 @@ class VideoRecorder:
             return None, None
     
     def record_frame(self, camera_frame=None, overlay_frame=None):
-        """Record frames to video files"""
+        """Queue frames for the encoder thread. This never waits: if encoding falls behind,
+        frames are lost from the video rather than from gaze tracking"""
         if not self.is_recording:
             return
-            
+
         try:
-            if camera_frame is not None and self.camera_writer and RECORD_CAMERA_FEED:
-                self.camera_writer.write(camera_frame)
-                
-            if overlay_frame is not None and self.overlay_writer and RECORD_OVERLAY_DISPLAY:
-                self.overlay_writer.write(overlay_frame)
-                
-        except Exception as e:
-            print(f"Error recording frame: {e}")
-            # Continue without recording rather than crash
-            
+            self.frame_queue.put_nowait((camera_frame, overlay_frame))
+        except Full:
+            self.frames_dropped += 1
+
+    def _write_frames(self):
+        """Encoder thread: writes queued frames until stop_recording queues None"""
+        while True:
+            frames = self.frame_queue.get()
+            if frames is None:
+                break
+
+            try:
+                self._write_pair(*frames)
+            except Exception as e:
+                print(f"Error recording frame: {e}")
+                # Continue without recording rather than crash
+
+    def _write_pair(self, camera_frame, overlay_frame):
+        """Encode one queued pair of frames"""
+        if camera_frame is not None and self.camera_path and RECORD_CAMERA_FEED:
+            if self.camera_writer is None:
+                # Size it from a real frame: cameras can ignore CAMERA_WIDTH/HEIGHT, and
+                # VideoWriter silently drops every frame that doesn't match its size
+                height, width = camera_frame.shape[:2]
+                self.camera_resolution = f"{width}x{height}"
+                self.camera_writer = cv2.VideoWriter(
+                    self.camera_path, cv2.VideoWriter_fourcc(*VIDEO_CODEC), self.fps, (width, height)
+                )
+            self.camera_writer.write(camera_frame)
+
+        if overlay_frame is not None and self.overlay_writer and RECORD_OVERLAY_DISPLAY:
+            self.overlay_writer.write(overlay_frame)
+
     def stop_recording(self) -> dict:
         """Stop recording and return metadata"""
         if not self.is_recording:
@@ -106,7 +131,11 @@ class VideoRecorder:
         try:
             # Stop recording flag
             self.is_recording = False
-            
+
+            # Finish what is queued, but a stuck encoder must not block the data export
+            self.frame_queue.put(None)
+            self.write_thread.join(timeout=30)
+
             # Release video writers
             if self.camera_writer:
                 self.camera_writer.release()
@@ -123,8 +152,9 @@ class VideoRecorder:
                 'overlay_display_path': self.overlay_path,
                 'fps': VIDEO_FPS,
                 'codec': VIDEO_CODEC,
-                'camera_resolution': f"{CAMERA_WIDTH}x{CAMERA_HEIGHT}",
-                'overlay_resolution': f"{SCREEN_WIDTH}x{SCREEN_HEIGHT}"
+                'camera_resolution': self.camera_resolution,
+                'overlay_resolution': f"{SCREEN_WIDTH}x{SCREEN_HEIGHT}",
+                'frames_dropped': self.frames_dropped
             }
             
             # Save metadata file
@@ -134,6 +164,8 @@ class VideoRecorder:
                     json.dump(metadata, f, indent=2)
                 print(f"Video metadata saved: {os.path.basename(metadata_path)}")
             
+            if self.frames_dropped:
+                print(f"Warning: {self.frames_dropped} video frames dropped, encoding fell behind")
             print("Video recording stopped successfully")
             return metadata
             
