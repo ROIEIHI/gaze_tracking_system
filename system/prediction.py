@@ -1360,8 +1360,8 @@ class TextReadingGazePredictor:
                     'y_positions': [data['y']],
                     'word': final_word,  # Use final_word (relaxed filtering)
                     'time_from_onset': data['time_from_onset'],
-                    'pupil_size': data.get('pupil_size', 0),
-                    'blink_frequency': data.get('blink_frequency', 0),
+                    'pupil_sizes': [data.get('pupil_size', 0)],
+                    'blink_frequencies': [data.get('blink_frequency', 0)],
                     'probe_answer': probe_ans
                 }
             else:
@@ -1374,9 +1374,8 @@ class TextReadingGazePredictor:
                     current_fixation['end_time'] = data['timestamp']
                     current_fixation['x_positions'].append(data['x'])
                     current_fixation['y_positions'].append(data['y'])
-                    current_fixation['time_from_onset'] = data['time_from_onset']
-                    current_fixation['pupil_size'] = data.get('pupil_size', 0)
-                    current_fixation['blink_frequency'] = data.get('blink_frequency', 0)
+                    current_fixation['pupil_sizes'].append(data.get('pupil_size', 0))
+                    current_fixation['blink_frequencies'].append(data.get('blink_frequency', 0))
                     # Probe answer should be same for same page
                 else:  # New fixation
                     # print(f"DEBUG: Ending fixation for '{current_fixation['word']}' (New word: '{final_word}', Time gap: {time_gap:.3f}s)")
@@ -1394,8 +1393,8 @@ class TextReadingGazePredictor:
                         # print(f"DEBUG: ACCEPTED fixation for '{current_fixation['word']}'")
                         avg_x = np.mean(current_fixation['x_positions'])
                         avg_y = np.mean(current_fixation['y_positions'])
-                        avg_pupil_size = np.mean(current_fixation['pupil_size'])
-                        avg_blink_frequency = np.mean(current_fixation['blink_frequency'])
+                        avg_pupil_size = np.mean(current_fixation['pupil_sizes'])
+                        avg_blink_frequency = np.mean(current_fixation['blink_frequencies'])
 
                         processed_fixations.append({
                             'Fixation_Order': fixation_order,
@@ -1411,18 +1410,18 @@ class TextReadingGazePredictor:
                         })
                     fixation_order += 1
                 
-                # Start new fixation
-                current_fixation = {
-                    'start_time': data['timestamp'],
-                    'end_time': data['timestamp'],
-                    'x_positions': [data['x']],
-                    'y_positions': [data['y']],
-                    'word': final_word,
-                    'time_from_onset': data['time_from_onset'],
-                    'pupil_size': data.get('pupil_size', 0),
-                    'blink_frequency': data.get('blink_frequency', 0),
-                    'probe_answer': probe_ans
-                }
+                    # Start new fixation
+                    current_fixation = {
+                        'start_time': data['timestamp'],
+                        'end_time': data['timestamp'],
+                        'x_positions': [data['x']],
+                        'y_positions': [data['y']],
+                        'word': final_word,
+                        'time_from_onset': data['time_from_onset'],
+                        'pupil_sizes': [data.get('pupil_size', 0)],
+                        'blink_frequencies': [data.get('blink_frequency', 0)],
+                        'probe_answer': probe_ans
+                    }
     
         # Process final fixation
         if current_fixation:
@@ -1435,8 +1434,8 @@ class TextReadingGazePredictor:
             if duration >= FIXATION_THRESHOLD:
                 avg_x = np.mean(current_fixation['x_positions'])
                 avg_y = np.mean(current_fixation['y_positions'])
-                avg_pupil_size = np.mean(current_fixation['pupil_size'])
-                avg_blink_frequency = np.mean(current_fixation['blink_frequency'])
+                avg_pupil_size = np.mean(current_fixation['pupil_sizes'])
+                avg_blink_frequency = np.mean(current_fixation['blink_frequencies'])
                 
                 processed_fixations.append({
                     'Fixation_Order': fixation_order,
