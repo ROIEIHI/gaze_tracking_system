@@ -44,10 +44,10 @@ VIDEO_BUFFER_SIZE = 30  # Maximum frames to buffer
 # ============================================================================
 
 # Face Detection and Tracking
-FACE_BOUNDARY_MARGIN_X = 0.3  # 30% margin from left/right edges
-FACE_BOUNDARY_MARGIN_Y = 0.15  # 15% margin from top/bottom edges
+FACE_BOUNDARY_MARGIN_X = 0.35  # 35% margin from left/right edges
+FACE_BOUNDARY_MARGIN_Y = 0.2375  # 23.75% margin from top/bottom edges
 FACE_STABILITY_THRESHOLD = 1.0  # seconds to wait for stable face detection
-FACE_BOUNDARY_SENSITIVITY = 0.1  # sensitivity for boundary warnings
+FACE_BOUNDARY_SENSITIVITY = 0.075  # sensitivity for boundary warnings
 MIN_FACE_SIZE = 100  # minimum face bounding box size in pixels
 
 # MediaPipe Face Detection Confidence Settings
