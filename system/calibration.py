@@ -63,18 +63,18 @@ class GazeCalibrator:
         
         # Corners (4 points)
         corners = [
-            (edge_margin, edge_margin),                    # Top-left
             (w - edge_margin, edge_margin),                # Top-right
-            (edge_margin, h - edge_margin),                # Bottom-left
-            (w - edge_margin, h - edge_margin)             # Bottom-right
+            (edge_margin, edge_margin),                    # Top-left
+            (w - edge_margin, h - edge_margin),            # Bottom-right
+            (edge_margin, h - edge_margin)                 # Bottom-left
         ]
         
         # Edges (4 points)
         edges = [
             (w // 2, edge_margin),                         # Top center
             (w // 2, h - edge_margin),                     # Bottom center
-            (edge_margin, h // 2),                         # Left center
-            (w - edge_margin, h // 2)                      # Right center
+            (w - edge_margin, h // 2),                     # Right center
+            (edge_margin, h // 2)                          # Left center
         ]
         
         # Inner grid (13 points) - 20% margin from edges
@@ -84,10 +84,10 @@ class GazeCalibrator:
         grid_top = int(h * margin)
         grid_bottom = int(h * (1 - margin))
         
-        # 3x3 base grid (9 points)
+        # 3x3 base grid (9 points), right-to-left within each row to match Hebrew reading
         inner_grid = []
         for row in range(3):
-            for col in range(3):
+            for col in reversed(range(3)):
                 x = grid_left + col * (grid_right - grid_left) // 2
                 y = grid_top + row * (grid_bottom - grid_top) // 2
                 inner_grid.append((x, y))
@@ -95,10 +95,10 @@ class GazeCalibrator:
         # 4 intermediate points between corners and center
         center = inner_grid[4]  # Middle point (index 4)
         intermediates = [
-            ((inner_grid[0][0] + center[0]) // 2, (inner_grid[0][1] + center[1]) // 2),  # TL-Center
-            ((inner_grid[2][0] + center[0]) // 2, (inner_grid[2][1] + center[1]) // 2),  # TR-Center
-            ((inner_grid[6][0] + center[0]) // 2, (inner_grid[6][1] + center[1]) // 2),  # BL-Center
-            ((inner_grid[8][0] + center[0]) // 2, (inner_grid[8][1] + center[1]) // 2),  # BR-Center
+            ((inner_grid[0][0] + center[0]) // 2, (inner_grid[0][1] + center[1]) // 2),  # TR-Center
+            ((inner_grid[2][0] + center[0]) // 2, (inner_grid[2][1] + center[1]) // 2),  # TL-Center
+            ((inner_grid[6][0] + center[0]) // 2, (inner_grid[6][1] + center[1]) // 2),  # BR-Center
+            ((inner_grid[8][0] + center[0]) // 2, (inner_grid[8][1] + center[1]) // 2),  # BL-Center
         ]
         
         # Combine strategic points (21 total)
@@ -110,7 +110,7 @@ class GazeCalibrator:
         
         additional_points = []
         for row in range(CALIBRATION_GRID_SIZE):
-            for col in range(CALIBRATION_GRID_SIZE):
+            for col in reversed(range(CALIBRATION_GRID_SIZE)):
                 # Calculate grid position
                 if CALIBRATION_GRID_SIZE > 1:
                     x = CALIBRATION_MARGIN_X + col * (w - 2 * CALIBRATION_MARGIN_X) // (CALIBRATION_GRID_SIZE - 1)
