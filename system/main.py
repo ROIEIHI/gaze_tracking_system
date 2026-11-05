@@ -42,8 +42,9 @@ def main():
     print("\n" + "="*60)
     print("STARTING MODEL TRAINING")
     print("="*60)
-    model_path = train_model_from_file(calibration_file)
-    
+    with calibrator.training_preview():
+        model_path = train_model_from_file(calibration_file)
+
     if not model_path:
         print("Model training failed")
         return

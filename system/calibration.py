@@ -9,6 +9,8 @@ import pandas as pd
 import mediapipe as mp
 import time
 import os
+import threading
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Tuple, List, Dict, Optional
 from config import *
@@ -335,10 +337,75 @@ class GazeCalibrator:
                    FONT_SCALE, color, FONT_THICKNESS)
         
         # Draw face boundary box
+        self._draw_boundary_box(frame)
+
+    def _draw_boundary_box(self, frame: np.ndarray, color: Tuple[int, int, int] = YELLOW):
+        """Draw the fixed box the face should stay inside"""
+        h, w = frame.shape[:2]
         margin_x = int(FACE_BOUNDARY_MARGIN_X * w)
         margin_y = int(FACE_BOUNDARY_MARGIN_Y * h)
-        cv2.rectangle(frame, (margin_x, margin_y), (w-margin_x, h-margin_y), YELLOW, 2)
-    
+        cv2.rectangle(frame, (margin_x, margin_y), (w-margin_x, h-margin_y), color, 2)
+
+    @contextmanager
+    def training_preview(self):
+        """Show a self-view for the duration of the with block (wraps the training call)"""
+        stop_event = threading.Event()
+        preview_thread = threading.Thread(target=self._run_training_preview, args=(stop_event,), daemon=True)
+        preview_thread.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
+            preview_thread.join(timeout=2.0)
+
+    def _run_training_preview(self, stop_event: threading.Event):
+        """Preview loop. Uses this calibrator's open camera, and a failure here never reaches training.
+        Stays at normal priority: training fills every core, so a below-normal thread freezes for seconds."""
+        window_name = 'Training - Please keep still'
+        frame_interval = 1.0 / TRAINING_PREVIEW_FPS
+        frames_shown = 0
+        start_time = time.time()
+
+        try:
+            cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
+            try:
+                cv2.setWindowProperty(window_name, cv2.WND_PROP_TOPMOST, 1)
+                next_frame_time = start_time
+                next_check_time = start_time
+                is_valid, error_msg = True, ""
+
+                while not stop_event.is_set():
+                    ret, frame = self.camera.read()
+                    if not ret:
+                        break
+
+                    frame = cv2.flip(frame, 1)  # Mirror the image
+
+                    # MediaPipe is too heavy for every frame, so the box keeps the last result between checks
+                    current_time = time.time()
+                    if current_time >= next_check_time:
+                        next_check_time = current_time + TRAINING_PREVIEW_CHECK_INTERVAL
+                        is_valid, _, error_msg = self._detect_and_validate_face(frame)
+
+                    self._draw_boundary_box(frame, YELLOW if is_valid else RED)
+                    if not is_valid:
+                        cv2.putText(frame, error_msg, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.55, RED, 2)
+
+                    cv2.imshow(window_name, frame)
+                    cv2.waitKey(1)
+                    frames_shown += 1
+
+                    next_frame_time = max(next_frame_time + frame_interval, time.time())
+                    stop_event.wait(next_frame_time - time.time())
+            finally:
+                cv2.destroyWindow(window_name)
+                cv2.waitKey(1)
+        except Exception as e:
+            print(f"Training preview stopped: {e}")
+
+        elapsed = time.time() - start_time
+        print(f"Training preview: {frames_shown} frames in {elapsed:.1f}s ({frames_shown / max(elapsed, 0.001):.1f} FPS)")
+
     def run_video_preview(self) -> bool:
         """Video preview with face detection"""
         print("Video Preview - Press SPACE when ready")

@@ -430,7 +430,8 @@ class GazeTrackingGUI:
             )
             
             # Train model - it will save to session directory
-            self.model_file = self.trainer.train_complete_model()
+            with self.calibrator.training_preview():
+                self.model_file = self.trainer.train_complete_model()
             
             if not self.model_file:
                 raise Exception("Model training failed")

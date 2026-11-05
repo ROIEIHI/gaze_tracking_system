@@ -66,6 +66,10 @@ CALIBRATION_MARGIN_Y = 200  # pixels from screen edges
 ANIMATION_SHRINK_FRAMES = 10  # frames for point shrinking animation
 FADE_IN_FRAMES = 10  # frames for point fade in
 
+# Training Preview (self-view shown while the model trains)
+TRAINING_PREVIEW_FPS = 12  # preview rate cap
+TRAINING_PREVIEW_CHECK_INTERVAL = 1.5  # seconds between face position checks
+
 # ============================================================================
 # FEATURE EXTRACTION
 # ============================================================================
