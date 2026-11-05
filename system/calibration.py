@@ -15,6 +15,12 @@ from datetime import datetime
 from typing import Tuple, List, Dict, Optional
 from config import *
 
+def pixels_to_degrees(error_px: float) -> float:
+    """Convert a gaze error in pixels to degrees of visual angle (Skovsgaard et al., 2011)"""
+    # Gaze pixels are in the SCREEN_WIDTH x SCREEN_HEIGHT image, which is stretched to fill the screen
+    pixel_size_cm = SCREEN_DIAGONAL_CM / np.hypot(SCREEN_WIDTH, SCREEN_HEIGHT)
+    return float(360 / np.pi * np.arctan(error_px * pixel_size_cm / (2 * VIEWING_DISTANCE_CM)))
+
 class GazeCalibrator:
     """Main calibration class handling all calibration processes"""
     

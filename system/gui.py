@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import threading
 import time
+import json
 import os
 import re
 import sys
@@ -17,7 +18,7 @@ from typing import Optional
 
 # Import all system modules
 from config import *
-from calibration import GazeCalibrator
+from calibration import GazeCalibrator, pixels_to_degrees
 from model_training import GazeModelTrainer
 from prediction import TextReadingGazePredictor
 from eye_movement_analyzer import EyeMovementAnalyzer
@@ -40,6 +41,7 @@ class GazeTrackingGUI:
         self.session_dir = ""
         self.calibration_file = ""
         self.model_file = ""
+        self.accuracy_attempts = []
         
         # GUI state
         self.current_step = 0
@@ -378,6 +380,7 @@ class GazeTrackingGUI:
         ])
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         self.session_dir = os.path.join(USER_DATA_DIR, f"{self.user_name}_{timestamp}")
+        self.accuracy_attempts = []
         
         # Create directories
         for subdir in ["calibration", "models", "analysis"]:
@@ -388,15 +391,20 @@ class GazeTrackingGUI:
     def run_workflow(self):
         """Execute the complete workflow"""
         try:
-            # Step 1: Calibration
-            self.update_status("Starting face detection and calibration...", 0)
-            if not self.run_calibration():
-                return
+            # Steps 1-2 run again from a fresh dataset if a poor calibration is redone
+            while True:
+                # Step 1: Calibration
+                self.update_status("Starting face detection and calibration...", 0)
+                if not self.run_calibration():
+                    return
                 
-            # Step 2: Model Training  
-            self.update_status("Training personalized gaze model...", 1)
-            if not self.run_model_training():
-                return
+                # Step 2: Model Training
+                self.update_status("Training personalized gaze model...", 1)
+                if not self.run_model_training():
+                    return
+
+                if self.accuracy_accepted():
+                    break
                 
             # Step 3: Text Reading Analysis
             self.update_status("Running text reading analysis...", 2)
@@ -436,6 +444,10 @@ class GazeTrackingGUI:
         """Execute calibration step"""
         try:
             calib_dir = os.path.join(self.session_dir, "calibration")
+
+            # A recalibration must not leave the previous attempt holding the camera
+            if self.calibrator:
+                self.calibrator.camera.release()
             
             # Create calibrator with session-specific output directory
             self.calibrator = GazeCalibrator(output_dir=calib_dir)
@@ -487,6 +499,43 @@ class GazeTrackingGUI:
             messagebox.showerror("Training Error", f"Model training failed: {str(e)}")
             return False
             
+    def accuracy_accepted(self) -> bool:
+        """Record this attempt's gaze error, returning False if it should be recalibrated"""
+        error_px = float(self.trainer.training_results['euclidean_rmse'])
+        error_degrees = pixels_to_degrees(error_px)
+        passed = error_degrees <= ERROR_THRESHOLD_DEGREES
+        recalibrate = False
+
+        if ERROR_THRESHOLD_ENABLED and not passed:
+            recalibrate = messagebox.askyesno(
+                "Low Gaze Accuracy",
+                f"Gaze error is {error_degrees:.2f}° ({error_px:.0f} px), "
+                f"over the {ERROR_THRESHOLD_DEGREES}° threshold.\n\n"
+                "Recalibrate now? This starts a fresh calibration dataset."
+            )
+
+        self.accuracy_attempts.append({
+            'attempt': len(self.accuracy_attempts) + 1,
+            'calibration_file': os.path.basename(self.calibration_file),
+            'error_px': round(error_px, 2),
+            'error_degrees': round(error_degrees, 3),
+            'threshold_degrees': ERROR_THRESHOLD_DEGREES,
+            'threshold_enabled': ERROR_THRESHOLD_ENABLED,
+            'screen_diagonal_cm': SCREEN_DIAGONAL_CM,
+            'viewing_distance_cm': VIEWING_DISTANCE_CM,
+            'passed': passed,
+            'recalibrated': recalibrate
+        })
+
+        try:
+            with open(os.path.join(self.session_dir, "accuracy_check.json"), 'w', encoding='utf-8') as f:
+                json.dump(self.accuracy_attempts, f, indent=2)
+        except Exception as e:
+            self.update_status(f"Could not save accuracy check: {str(e)}")
+
+        self.update_status(f"Gaze error: {error_degrees:.2f}° ({error_px:.0f} px) - {'pass' if passed else 'over threshold'}")
+        return not recalibrate
+
     def run_text_analysis(self) -> bool:
         """Execute text reading analysis step"""
         try:
@@ -535,6 +584,13 @@ class GazeTrackingGUI:
                 f.write(f"Session Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"Calibration File: {os.path.basename(self.calibration_file)}\n")
                 f.write(f"Model File: {os.path.basename(self.model_file)}\n")
+                if self.accuracy_attempts:
+                    final_attempt = self.accuracy_attempts[-1]
+                    f.write(f"Gaze Error: {final_attempt['error_degrees']:.2f}° ({final_attempt['error_px']:.0f} px)\n")
+                    f.write(f"Accuracy Check: {'PASS' if final_attempt['passed'] else 'FAIL'} "
+                            f"(threshold {final_attempt['threshold_degrees']}°, "
+                            f"{'enforced' if final_attempt['threshold_enabled'] else 'not enforced'}, "
+                            f"attempt {final_attempt['attempt']})\n")
                 f.write(f"Reading Mode: {'Hebrew RTL' if RTL_READING_DIRECTION == 'rtl' else 'English LTR'}\n")
                 f.write(f"Screen Resolution: {SCREEN_WIDTH}×{SCREEN_HEIGHT}\n")
                 f.write(f"Text Font Size: {TEXT_FONT_SIZE}\n\n")

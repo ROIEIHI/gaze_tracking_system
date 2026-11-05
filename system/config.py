@@ -70,6 +70,12 @@ FADE_IN_FRAMES = 10  # frames for point fade in
 TRAINING_PREVIEW_FPS = 12  # preview rate cap
 TRAINING_PREVIEW_CHECK_INTERVAL = 1.5  # seconds between face position checks
 
+# Session Accuracy Check
+ERROR_THRESHOLD_ENABLED = False  # Offer recalibration when the error is over the threshold (False ignores it, the error is still saved)
+ERROR_THRESHOLD_DEGREES = 2.5  # maximum gaze error in degrees of visual angle
+SCREEN_DIAGONAL_CM = 35.56  # physical screen diagonal (14 inch)
+VIEWING_DISTANCE_CM = 40  # eye-to-screen distance
+
 # ============================================================================
 # FEATURE EXTRACTION
 # ============================================================================
