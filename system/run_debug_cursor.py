@@ -76,7 +76,8 @@ class DebugGazePredictor(TextReadingGazePredictor):
                 except:
                     velocity = 0
                 
-                info_text = f"Word: {nearest_word} | Vel: {velocity:.1f}"
+                word_number = nearest_word['word_index'] if nearest_word else "Unknown"
+                info_text = f"Word: {word_number} | Vel: {velocity:.1f}"
                 cv2.putText(text_display, info_text, (x + 15, y), 
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
                 

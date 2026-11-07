@@ -310,13 +310,19 @@ class TextReadingGazePredictor:
         self.total_pages = 0
         
         for page_id in sorted(PAGES.keys()):
-            # Add Visual Pages to Sequence
+            # Add Visual Pages to Sequence. Line and word numbers run through the whole passage
+            first_line = 1
+            first_word = 1
             for rows in paginate_text(PAGES[page_id]):
                 self.reading_sequence.append({
                     'type': 'page',
                     'id': page_id,
-                    'content': rows
+                    'content': rows,
+                    'first_line': first_line,
+                    'first_word': first_word
                 })
+                first_line += len(rows)
+                first_word += sum(len(row) for row in rows)
                 self.total_pages += 1
 
             # Add Probe if exists for this page
@@ -341,7 +347,7 @@ class TextReadingGazePredictor:
             return self._render_probe(step, background)
 
         if self.cached_page != self.current_page:
-            self.page_image, self.word_positions = render_page(step['content'], self.current_page)
+            self.page_image, self.word_positions = render_page(step['content'], self.current_page, step['first_line'], step['first_word'])
             self._draw_navigation_info(self.page_image)
             self.cached_page = self.current_page
 
@@ -823,7 +829,9 @@ class TextReadingGazePredictor:
                     'timestamp': current_time,
                     'x': x,
                     'y': y,
-                    'word': nearest_word,
+                    'word': nearest_word['word'] if nearest_word else "Unknown",
+                    'line': nearest_word['line'] if nearest_word else None,
+                    'word_index': nearest_word['word_index'] if nearest_word else None,
                     'time_from_onset': time_from_onset,
                     'page': self.current_page,
                     'pupil_size': pupil_size,
@@ -833,12 +841,9 @@ class TextReadingGazePredictor:
             #    print(f"DEBUG: Saccade detected (Velocity: {current_velocity})")
     
     def _find_nearest_word(self, gaze_x, gaze_y):
-        """Find the nearest word to gaze coordinates"""
-        if not self.word_positions:
-            return "Unknown"
-        
+        """Find the word nearest to the gaze, returning its position record or None if none is close enough"""
         min_distance = float('inf')
-        nearest_word = "Unknown"
+        nearest_word = None
         
         for word_info in self.word_positions:
             word_x = word_info['x']
@@ -848,7 +853,7 @@ class TextReadingGazePredictor:
             
             if distance < min_distance and distance < WORD_PROXIMITY_THRESHOLD:
                 min_distance = distance
-                nearest_word = word_info['word']
+                nearest_word = word_info
         
         return nearest_word
     
@@ -912,17 +917,21 @@ class TextReadingGazePredictor:
                     'x_positions': [data['x']],
                     'y_positions': [data['y']],
                     'word': final_word,  # Use final_word (relaxed filtering)
+                    'page_id': page_id,
+                    'line': data['line'],
+                    'word_index': data['word_index'],
                     'time_from_onset': data['time_from_onset'],
                     'pupil_sizes': [data.get('pupil_size', 0)],
                     'blink_frequencies': [data.get('blink_frequency', 0)],
                     'probe_answer': probe_ans
                 }
             else:
-                # Check if this continues the current fixation (same cleaned word)
+                # Check if this continues the current fixation (same word position, not just the same spelling)
                 time_gap = data['timestamp'] - current_fixation['end_time']
                 
                 # Increased threshold to 0.5s to handle slower frame rates/processing
-                if time_gap < 0.5 and final_word == current_fixation['word']:  # Same fixation
+                same_word = page_id == current_fixation['page_id'] and data['word_index'] == current_fixation['word_index']
+                if time_gap < 0.5 and same_word:  # Same fixation
                     # print(f"DEBUG: Extending fixation for '{final_word}'")
                     current_fixation['end_time'] = data['timestamp']
                     current_fixation['x_positions'].append(data['x'])
@@ -951,7 +960,9 @@ class TextReadingGazePredictor:
 
                         processed_fixations.append({
                             'Fixation_Order': fixation_order,
-                            'Page_Number': page_id,
+                            'Page_Number': current_fixation['page_id'],
+                            'Line': current_fixation['line'],
+                            'Word_Index': current_fixation['word_index'],
                             'Fixated_Word': current_fixation['word'],
                             'Fixation_X_Screen': round(avg_x, 2),
                             'Fixation_Y_Screen': round(avg_y, 2),
@@ -970,6 +981,9 @@ class TextReadingGazePredictor:
                         'x_positions': [data['x']],
                         'y_positions': [data['y']],
                         'word': final_word,
+                        'page_id': page_id,
+                        'line': data['line'],
+                        'word_index': data['word_index'],
                         'time_from_onset': data['time_from_onset'],
                         'pupil_sizes': [data.get('pupil_size', 0)],
                         'blink_frequencies': [data.get('blink_frequency', 0)],
@@ -992,7 +1006,9 @@ class TextReadingGazePredictor:
                 
                 processed_fixations.append({
                     'Fixation_Order': fixation_order,
-                    'Page_Number': page_id,
+                    'Page_Number': current_fixation['page_id'],
+                    'Line': current_fixation['line'],
+                    'Word_Index': current_fixation['word_index'],
                     'Fixated_Word': current_fixation['word'],
                     'Fixation_X_Screen': round(avg_x, 2),
                     'Fixation_Y_Screen': round(avg_y, 2),
@@ -1008,7 +1024,8 @@ class TextReadingGazePredictor:
             # Apply consecutive word grouping to avoid duplicates
             grouped_fixations = self._group_consecutive_words(processed_fixations)
             
-            df = pd.DataFrame(grouped_fixations)
+            # Line and Word_Index stay whole numbers, and are blank when the gaze wasn't on a word
+            df = pd.DataFrame(grouped_fixations).astype({'Line': 'Int64', 'Word_Index': 'Int64'})
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"eye_movement_data_{timestamp}.csv"
             
@@ -1016,7 +1033,7 @@ class TextReadingGazePredictor:
             os.makedirs(self.output_dir, exist_ok=True)
             filepath = os.path.join(self.output_dir, filename)
             
-            df.to_csv(filepath, index=False)
+            df.to_csv(filepath, index=False, encoding='utf-8-sig')  # The BOM lets Excel read the Hebrew
             print(f"Exported {len(grouped_fixations)} Hebrew word fixations to: {filepath}")
             print(f"Hebrew words recognized: {len(set(fix['Fixated_Word'] for fix in grouped_fixations))}")
             print(f"Grouped from {len(processed_fixations)} individual fixations")
@@ -1032,6 +1049,8 @@ class TextReadingGazePredictor:
         
         grouped_fixations = []
         current_word = None
+        current_line = None
+        current_index = None
         accumulated_duration = 0
         accumulated_x = []
         accumulated_y = []
@@ -1043,10 +1062,11 @@ class TextReadingGazePredictor:
         
         for fixation in fixations:
             word = fixation['Fixated_Word']
+            word_index = fixation['Word_Index']
             page = fixation.get('Page_Number', 0)
             
-            if word == current_word and page == current_page and current_word is not None:
-                # Same word AND same page - accumulate data
+            if word_index == current_index and page == current_page and current_word is not None:
+                # Same word position AND same page - accumulate data
                 accumulated_duration += fixation['Fixation_Duration']
                 accumulated_x.append(fixation['Fixation_X_Screen'])
                 accumulated_y.append(fixation['Fixation_Y_Screen'])
@@ -1059,6 +1079,8 @@ class TextReadingGazePredictor:
                     grouped_fixations.append({
                         'Fixation_Order': len(grouped_fixations) + 1,
                         'Page_Number': current_page,
+                        'Line': current_line,
+                        'Word_Index': current_index,
                         'Fixated_Word': current_word,
                         'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
                         'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),
@@ -1071,6 +1093,8 @@ class TextReadingGazePredictor:
                 
                 # Start new word group
                 current_word = word
+                current_line = fixation['Line']
+                current_index = word_index
                 current_page = page
                 word_start_time = fixation['Time_from_Stimulus_Onset']
                 accumulated_duration = fixation['Fixation_Duration']
@@ -1085,6 +1109,8 @@ class TextReadingGazePredictor:
             grouped_fixations.append({
                 'Fixation_Order': len(grouped_fixations) + 1,
                 'Page_Number': current_page,
+                'Line': current_line,
+                'Word_Index': current_index,
                 'Fixated_Word': current_word,
                 'Fixation_X_Screen': round(np.mean(accumulated_x), 2),
                 'Fixation_Y_Screen': round(np.mean(accumulated_y), 2),

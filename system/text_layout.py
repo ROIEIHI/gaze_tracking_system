@@ -69,8 +69,9 @@ def paginate_text(text: str) -> List[List[List[str]]]:
     return [rows[i:i + TEXT_ROWS_PER_PAGE] for i in range(0, len(rows), TEXT_ROWS_PER_PAGE)]
 
 
-def render_page(rows: List[List[str]], page: int) -> Tuple[np.ndarray, List[Dict]]:
-    """Draw one page of rows, returning the BGR image and the position of every word"""
+def render_page(rows: List[List[str]], page: int, first_line: int = 1, first_word: int = 1) -> Tuple[np.ndarray, List[Dict]]:
+    """Draw one page of rows, returning the BGR image and the position of every word.
+    Line and word numbers carry on from first_line and first_word, so they count through the whole passage"""
     font = load_text_font(TEXT_FONT_SIZE)
     space_width = font.getlength(" ")
     ascent, _ = font.getmetrics()
@@ -98,6 +99,8 @@ def render_page(rows: List[List[str]], page: int) -> Tuple[np.ndarray, List[Dict
                 'y': baseline - letter_height // 2,
                 'row': row_idx,
                 'col': col_idx,
+                'line': first_line + row_idx,
+                'word_index': first_word + len(word_positions),
                 'width': int(word_width),
                 'height': TEXT_FONT_SIZE,
                 'page': page
