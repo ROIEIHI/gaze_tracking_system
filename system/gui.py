@@ -727,11 +727,6 @@ def main():
     """Main function"""
     print("Starting Professional Gaze Tracking System...")
     
-    # Create data directories
-    os.makedirs(CALIBRATION_DATA_DIR, exist_ok=True)
-    os.makedirs(MODELS_DIR, exist_ok=True)
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    
     try:
         app = GazeTrackingGUI()
         app.run()

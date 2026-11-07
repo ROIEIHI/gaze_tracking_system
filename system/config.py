@@ -16,15 +16,11 @@ CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 CAMERA_INDEX = 0
 
-# File and Directory Settings
-CALIBRATION_DATA_DIR = "calibration_data"
-MODELS_DIR = "models"
-OUTPUT_DIR = "eye_tracking_data"
-USER_DATA_DIR = "user_data"
-
-# Ensure directories exist
-for directory in [CALIBRATION_DATA_DIR, MODELS_DIR, OUTPUT_DIR, USER_DATA_DIR]:
-    os.makedirs(directory, exist_ok=True)
+# File and Directory Settings (always inside this folder, wherever the program is launched from)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+USER_DATA_DIR = os.path.join(BASE_DIR, "user_data")
+CALIBRATION_DATA_DIR = os.path.join(BASE_DIR, "calibration_data")  # Only used by main.py
+MODELS_DIR = os.path.join(BASE_DIR, "models")                      # Only used by main.py
 
 # ============================================================================
 # VIDEO RECORDING SETTINGS

@@ -63,14 +63,8 @@ def create_directories():
     """Create necessary project directories"""
     print("[INFO] Creating project directories...")
     
-    base_dir = Path(__file__).parent.parent
-    directories = [
-        "calibration_data",
-        "eye_tracking_data", 
-        "models",
-        "movement_data",
-        "user_data"
-    ]
+    base_dir = Path(__file__).parent
+    directories = ["user_data"]
     
     for dir_name in directories:
         dir_path = base_dir / dir_name
@@ -186,10 +180,6 @@ def main():
     print("  Command Line:     python main.py")
     print()
     print("Project directories created:")
-    print("  • calibration_data/  (for calibration files)")
-    print("  • eye_tracking_data/ (for session data)")  
-    print("  • models/           (for trained models)")
-    print("  • movement_data/    (for movement analysis)")
     print("  • user_data/        (for user sessions)")
     print()
     

@@ -144,10 +144,8 @@ This document provides a comprehensive overview of each module in the gaze track
 ### **Directory Structure**
 ```
 system/
-├── calibration_data/     # Calibration CSV files
-├── models/              # Trained ML models (.pkl files)
-├── eye_tracking_data/   # Raw prediction output
-├── movement_data/       # Processed movement analysis
+├── calibration_data/     # Calibration CSV files (main.py only, created when used)
+├── models/              # Trained ML models (main.py only, created when used)
 └── user_data/          # User sessions with organized subdirectories
     └── username_timestamp/
         ├── calibration/     # Session-specific calibration

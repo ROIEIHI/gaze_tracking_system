@@ -110,15 +110,12 @@ python start.py
 After setup, the following structure is created:
 ```
 gaze_tracking_system/
-├── system/                   # Core system files
-├── calibration_data/         # System-level calibration storage
-├── eye_tracking_data/        # Session data directory
-├── models/                   # System-level model storage
-└── user_sessions/            # User-specific session directories
-    └── username_timestamp/   # Individual session folders
-        ├── calibration/      # Session calibration data
-        ├── models/          # Session-specific models
-        └── analysis/        # Session analysis output
+└── system/                   # Core system files
+    └── user_data/            # User-specific session directories
+        └── username_timestamp/   # Individual session folders
+            ├── calibration/      # Session calibration data
+            ├── models/          # Session-specific models
+            └── analysis/        # Session analysis output
 ```
 
 

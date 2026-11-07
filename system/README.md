@@ -102,7 +102,7 @@ system/
 
 ### Data Organization
 ```
-user_sessions/
+user_data/
 └── username_timestamp/
     ├── calibration/          # Session calibration data
     ├── models/              # Session-specific models
