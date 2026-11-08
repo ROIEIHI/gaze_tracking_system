@@ -24,6 +24,40 @@ from model_training import GazeModelTrainer
 from prediction import TextReadingGazePredictor
 from eye_movement_analyzer import EyeMovementAnalyzer
 
+
+def missing_config_settings() -> list:
+    """Settings the program uses that config.py doesn't define. A deleted or misspelled setting
+    would otherwise only fail when its code first runs, which can be after calibration"""
+    import ast
+    import config
+
+    folder = os.path.dirname(os.path.abspath(__file__))
+    missing = set()
+    for filename in sorted(os.listdir(folder)):
+        if not filename.endswith(".py") or filename == "config.py":
+            continue
+        source = open(os.path.join(folder, filename), encoding="utf-8").read()
+        if "from config import *" not in source:
+            continue
+
+        tree = ast.parse(source)
+        defined = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                defined.add(node.id)
+            elif isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                defined.add(node.name)
+            elif isinstance(node, ast.alias):
+                defined.add((node.asname or node.name).split(".")[0])
+            elif isinstance(node, ast.arg):
+                defined.add(node.arg)
+
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load) and re.fullmatch(r"[A-Z][A-Z0-9_]+", node.id)
+                    and node.id not in defined and not hasattr(config, node.id)):
+                missing.add(node.id)
+    return sorted(missing)
+
 class GazeTrackingGUI:
     """Professional GUI for the Gaze Tracking System"""
     
@@ -359,6 +393,13 @@ class GazeTrackingGUI:
                 widget.focus()
                 return False
             
+        # A setting missing from config.py must stop the session here, not after calibration
+        missing = missing_config_settings()
+        if missing:
+            messagebox.showerror("Configuration Error",
+                                 "config.py is missing these settings (deleted or misspelled):\n\n" + "\n".join(missing))
+            return False
+
         # A text setting that can't fit must stop the session here, not after calibration
         try:
             build_reading_sequence()
