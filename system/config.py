@@ -91,7 +91,7 @@ FACE_BOUNDARY_MARGIN_Y = 0.2375     # 23.75% margin from top/bottom edges
 FACE_BOUNDARY_SENSITIVITY = 0.075   # Sensitivity for boundary warnings
 
 # Face detection
-MIN_FACE_SIZE = 100                 # Minimum face bounding box size in pixels
+MIN_FACE_SIZE = 200                 # Minimum face bounding box size in pixels 200 ~ 40 cm distance from the camera
 FACE_STABILITY_THRESHOLD = 1.0      # Seconds to wait for stable face detection
 FACE_DETECTION_CONFIDENCE = 0.9     # MediaPipe detection confidence
 FACE_TRACKING_CONFIDENCE = 0.9      # MediaPipe tracking confidence
@@ -195,7 +195,7 @@ CALIBRATION_DATA_DIR = os.path.join(BASE_DIR, "calibration_data")  # Only used b
 MODELS_DIR = os.path.join(BASE_DIR, "models")                      # Only used by main.py
 
 # ============================================================================
-# 11. FACE AND EYE MODEL (do not change, trained models depend on these)
+# 11. FACE AND EYE MODEL
 # ============================================================================
 
 # Feature column names (FIXED ORDER - DO NOT CHANGE)
@@ -252,14 +252,14 @@ CSV_COLUMNS = [
 # ============================================================================
 
 # Opening screen, shown before the first text. The tester presses D to start reading
-OPENING_TITLE = "הכל מוכן, אפשר להתחיל"
+OPENING_TITLE = "הכל מוכן! אפשר להתחיל..."
 OPENING_INSTRUCTIONS = [            # One paragraph per line, long lines wrap on screen
-    "זהו מפגש לניתוח קריאה. יוצגו לך כמה טקסטים קצרים לקריאה.",
-    "יש לשבת בנוחות ולשמור על תנוחה יציבה, בלי לזוז הרבה עם הראש.",
-    "אחרי כל חלק בטקסט תופיע שאלה. עונים עליה בלחיצה על YES או NO.",
-    "בסוף כל טקסט יש לדרג עד כמה הבנת אותו, מ-1 עד 5, ולהראות את המספר באצבעות מול המצלמה.",
-    "אם התנוחה תשתנה, הקריאה תיעצר ויופיע מסך שיעזור לחזור למקום. הקריאה תמשיך מעצמה.",
-    "קוראים בקצב הרגיל. בהצלחה!",
+    "בחלק זה יוצגו לך כמה טקסטים קצרים לקריאה.",
+    "יש לשמור על תנוחה יציבה בלי לזוז הרבה עם הראש בדומה לתהליך הקליברציה.",
+    "אחרי כל חלק בטקסט תופיע שאלה, עונים עליה בלחיצה על YES או NO.",
+    "בסוף כל טקסט יש לדרג עד כמה הבנת אותו מ 1-5, ולסמן במספר אצבעות מול המצלמה.",
+    "אם תנוחת הראש תשתנה, הקריאה תיעצר ותצטרך לחזור למקום. הקריאה תמשיך מעצמה.",
+    "בהצלחה!",
 ]
 
 # Shown while reading is paused because the face left the box
