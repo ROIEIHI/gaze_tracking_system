@@ -17,6 +17,7 @@ from eye_movement_analyzer import EyeMovementAnalyzer, GazePoint, MovementMetric
 import pandas as pd
 from PIL import ImageDraw, Image
 from text_layout import build_reading_sequence, draw_instructions, load_text_font, render_page
+from calibration import draw_face_box, face_position_problem
 import os
 import re
 import threading
@@ -270,6 +271,14 @@ class TextReadingGazePredictor:
         self.mouse_x = 0
         self.mouse_y = 0
         self.mouse_clicked = False
+
+        # Position check during reading
+        self.face_problem = ""              # Why the face is out of position on this frame, "" when it's fine
+        self.out_of_position_since = None
+        self.in_position_since = None
+        self.paused = False
+        self.position_event = None          # The stretch out of position happening now
+        self.position_events = []
         
     def _mouse_callback(self, event, x, y, flags, param):
         """Handle mouse events for probe interaction"""
@@ -333,6 +342,80 @@ class TextReadingGazePredictor:
             self.cached_page = self.current_page
 
         return self.page_image.copy()
+
+    def _update_position(self, shown_step):
+        """Track the face against the box. Reading pauses after OOB_PAUSE_AFTER_SECONDS out of it, on text pages only,
+        and resumes after OOB_RESUME_AFTER_SECONDS steady inside. Stretches out of the box are logged once reading starts"""
+        now = time.time()
+
+        if self.face_problem:
+            self.in_position_since = None
+            if self.out_of_position_since is None:
+                self.out_of_position_since = now
+                self._open_position_event(shown_step, now)
+            if not self.paused and shown_step['type'] == 'page' and now - self.out_of_position_since >= OOB_PAUSE_AFTER_SECONDS:
+                self.paused = True
+                if self.position_event:
+                    self.position_event['Paused'] = True
+                print("Reading paused, the face is out of position")
+        else:
+            if self.out_of_position_since is not None:
+                self.out_of_position_since = None
+                self._close_position_event(now)
+            if self.in_position_since is None:
+                self.in_position_since = now
+            if self.paused and now - self.in_position_since >= OOB_RESUME_AFTER_SECONDS:
+                self.paused = False
+                self.smoothed_x = self.smoothed_y = None  # Start the gaze smoothing fresh
+                print("Reading resumed")
+
+    def _open_position_event(self, shown_step, now):
+        """Start logging a stretch out of position, once the reading clock is running"""
+        if self.session_start_time is None:
+            return
+        self.position_event = {
+            'Start_ms': round((now - self.session_start_time) * 1000, 2),
+            'Duration_ms': None,
+            'Screen': 'text' if shown_step['type'] == 'page' else shown_step['type'],
+            'Text_Number': shown_step.get('text'),
+            'Part_Number': shown_step.get('part'),
+            'Page_Number': shown_step.get('page_number'),
+            'Reason': self.face_problem,
+            'Paused': self.paused,
+            'started': now
+        }
+
+    def _close_position_event(self, now=None):
+        """Finish the current stretch out of position and keep it for the events file"""
+        if self.position_event is None:
+            return
+        event = self.position_event
+        event['Duration_ms'] = round(((now or time.time()) - event.pop('started')) * 1000, 2)
+        self.position_events.append(event)
+        self.position_event = None
+
+    def _render_reposition_screen(self, frame):
+        """Live camera view with the face box, shown while reading is paused"""
+        h, w = frame.shape[:2]
+        scale = min(SCREEN_WIDTH / w, (SCREEN_HEIGHT - 110) / h)
+        preview = cv2.resize(frame, (int(w * scale), int(h * scale)))
+        draw_face_box(preview, RED if self.face_problem else GREEN)
+
+        screen = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), 40, dtype=np.uint8)
+        top = SCREEN_HEIGHT - preview.shape[0] - 10
+        left = (SCREEN_WIDTH - preview.shape[1]) // 2
+        screen[top:top + preview.shape[0], left:left + preview.shape[1]] = preview
+        return self._render_hebrew_text(REPOSITION_MESSAGE, (SCREEN_WIDTH // 2, 30), font_size=36,
+                                        color=(255, 255, 255), background_image=screen, centered=True)
+
+    def _draw_position_status(self, image, frame):
+        """Small camera view and the position status, on screens that wait for the face to be in the box"""
+        h, w = frame.shape[:2]
+        thumbnail = cv2.resize(frame, (240, int(240 * h / w)))
+        draw_face_box(thumbnail, RED if self.face_problem else GREEN)
+        image[20:20 + thumbnail.shape[0], 20:20 + thumbnail.shape[1]] = thumbnail
+        status = self.face_problem or "Position OK - press D to start"
+        cv2.putText(image, status, (275, 45), cv2.FONT_HERSHEY_SIMPLEX, 0.55, RED if self.face_problem else (0, 150, 0), 2)
 
     def _render_question(self, step, image):
         """Draw a step's text centred on the question screen"""
@@ -513,9 +596,11 @@ class TextReadingGazePredictor:
         results = self.face_mesh.process(rgb_frame)
         
         if not results.multi_face_landmarks:
+            self.face_problem = MESSAGES['face_not_detected']
             return None, None, None # gaze point, blink, pupil size
-        
+
         face_landmarks = results.multi_face_landmarks[0]
+        self.face_problem = face_position_problem(face_landmarks, frame.shape)
         
         # Extract features (simplified - adapt to your feature extraction logic)
         features = self._extract_features(face_landmarks, frame.shape)
@@ -889,10 +974,23 @@ class TextReadingGazePredictor:
         print(f"Probe answers saved to: {filepath}")
         return filepath
 
+    def _export_position_events(self) -> str:
+        """Save every stretch the face spent out of the box, so drifts and pauses can be reviewed"""
+        columns = ['Event_Order', 'Start_ms', 'Duration_ms', 'Screen', 'Text_Number', 'Part_Number', 'Page_Number', 'Reason', 'Paused']
+        rows = [{'Event_Order': i + 1, **event} for i, event in enumerate(self.position_events)]
+        df = pd.DataFrame(rows, columns=columns).astype({'Text_Number': 'Int64', 'Part_Number': 'Int64', 'Page_Number': 'Int64'})
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        filepath = os.path.join(self.output_dir, f"session_events_{self.session_timestamp}.csv")
+        df.to_csv(filepath, index=False, encoding='utf-8-sig')
+        print(f"Position events saved to: {filepath} ({len(rows)} out of position)")
+        return filepath
+
     def _export_fixation_data(self) -> str:
         """Export fixation data in the same format as your CSV example"""
         # Answers go first and don't depend on fixations, so a page with no gaze can't lose one
         self._export_probe_answers()
+        self._export_position_events()
 
         # print(f"DEBUG: Exporting fixation data. Total raw fixations: {len(self.fixation_data)}")
         if not self.fixation_data:
@@ -1202,12 +1300,20 @@ class TextReadingGazePredictor:
                 shown_step = self.reading_sequence[self.current_page]
                 if self.session_start_time is None and shown_step['type'] == 'page':
                     self.session_start_time = time.time()
-                text_display = self._render_text_page()
+                if OOB_CHECK_ENABLED:
+                    self._update_position(shown_step)
+
+                if self.paused:
+                    text_display = self._render_reposition_screen(frame)
+                else:
+                    text_display = self._render_text_page()
+                    if OOB_CHECK_ENABLED and shown_step.get('check_position'):
+                        self._draw_position_status(text_display, frame)
 
                 # The overlay recording always carries the gaze markers, whatever the participant sees
                 recorded_display = text_display.copy()
 
-                if prediction:
+                if prediction and not self.paused:
                     pred_x, pred_y = prediction
                     
                     # Apply smoothing
@@ -1220,8 +1326,9 @@ class TextReadingGazePredictor:
                     smoothed_x = int(self.smoothed_x)
                     smoothed_y = int(self.smoothed_y)
                     
-                    # Add to analysis ONLY if it's a page (not a probe)
-                    if shown_step['type'] == 'page':
+                    # Add to analysis only on a text page, and only with the face in the box when the check is on
+                    in_position = not (OOB_CHECK_ENABLED and self.face_problem)
+                    if shown_step['type'] == 'page' and in_position:
                         # print(f"DEBUG: Adding gaze point ({smoothed_x}, {smoothed_y})")
                         self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
                     else:
@@ -1251,13 +1358,16 @@ class TextReadingGazePredictor:
                 if key == 27:  # ESC
                     break
                 elif key == ord('a') or key == ord('A'):  # Previous page
-                    if self.current_page > 0:
+                    if self.current_page > 0 and not self.paused:
                         self.current_page -= 1
                         print(f"Moved to page {self.current_page + 1}")
                 elif key == ord('d') or key == ord('D'):  # Next page
-                    if self.current_page < len(self.reading_sequence) - 1:
-                        # Probes require a click, every other step moves on with this key
-                        if self.reading_sequence[self.current_page]['type'] != 'probe':
+                    if self.current_page < len(self.reading_sequence) - 1 and not self.paused:
+                        # Probes require a click, every other step moves on with this key.
+                        # A screen that checks the position, like the opening one, waits for the face to be in the box
+                        step = self.reading_sequence[self.current_page]
+                        waiting = OOB_CHECK_ENABLED and step.get('check_position') and self.face_problem
+                        if step['type'] != 'probe' and not waiting:
                             self.current_page += 1
                             print(f"Moved to step {self.current_page + 1}")
                 elif key == ord('e') or key == ord('E'):  # Export data
@@ -1265,7 +1375,8 @@ class TextReadingGazePredictor:
         
         finally:
             cv2.destroyAllWindows()
-            
+            self._close_position_event()
+
             # Stop video recording
             if self.video_recorder and VIDEO_RECORDING_ENABLED:
                 self.video_metadata = self.video_recorder.stop_recording()

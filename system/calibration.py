@@ -21,6 +21,36 @@ def pixels_to_degrees(error_px: float) -> float:
     pixel_size_cm = SCREEN_DIAGONAL_CM / np.hypot(SCREEN_WIDTH, SCREEN_HEIGHT)
     return float(360 / np.pi * np.arctan(error_px * pixel_size_cm / (2 * VIEWING_DISTANCE_CM)))
 
+def face_position_problem(face_landmarks, frame_shape) -> str:
+    """Why a face is not in a usable position, or "" when it is. Setup and reading both use this rule"""
+    h, w = frame_shape[:2]
+    x_coords = [landmark.x for landmark in face_landmarks.landmark]
+    y_coords = [landmark.y for landmark in face_landmarks.landmark]
+
+    face_width = (max(x_coords) - min(x_coords)) * w
+    face_height = (max(y_coords) - min(y_coords)) * h
+    if face_width < MIN_FACE_SIZE or face_height < MIN_FACE_SIZE:
+        return MESSAGES['face_too_small']
+
+    face_center_x = (max(x_coords) + min(x_coords)) / 2
+    face_center_y = (max(y_coords) + min(y_coords)) / 2
+    effective_margin_x = FACE_BOUNDARY_MARGIN_X + FACE_BOUNDARY_SENSITIVITY
+    effective_margin_y = FACE_BOUNDARY_MARGIN_Y + FACE_BOUNDARY_SENSITIVITY
+    if (face_center_x < effective_margin_x or face_center_x > 1 - effective_margin_x or
+            face_center_y < effective_margin_y or face_center_y > 1 - effective_margin_y):
+        return MESSAGES['face_out_of_bounds']
+
+    return ""
+
+
+def draw_face_box(frame: np.ndarray, color: Tuple[int, int, int] = YELLOW):
+    """Draw the fixed box the face should stay inside"""
+    h, w = frame.shape[:2]
+    margin_x = int(FACE_BOUNDARY_MARGIN_X * w)
+    margin_y = int(FACE_BOUNDARY_MARGIN_Y * h)
+    cv2.rectangle(frame, (margin_x, margin_y), (w-margin_x, h-margin_y), color, 2)
+
+
 class GazeCalibrator:
     """Main calibration class handling all calibration processes"""
     
@@ -151,35 +181,8 @@ class GazeCalibrator:
             return False, None, MESSAGES['face_not_detected']
         
         face_landmarks = results.multi_face_landmarks[0]
-        
-        # Calculate face bounding box
-        h, w = frame.shape[:2]
-        x_coords = [landmark.x for landmark in face_landmarks.landmark]
-        y_coords = [landmark.y for landmark in face_landmarks.landmark]
-        
-        face_width = (max(x_coords) - min(x_coords)) * w
-        face_height = (max(y_coords) - min(y_coords)) * h
-        
-        # Check face size
-        if face_width < MIN_FACE_SIZE or face_height < MIN_FACE_SIZE:
-            return False, face_landmarks, MESSAGES['face_too_small']
-        
-        # Check if face is within acceptable bounds
-        face_center_x = (max(x_coords) + min(x_coords)) / 2
-        face_center_y = (max(y_coords) + min(y_coords)) / 2
-
-        boundary_margin_x = FACE_BOUNDARY_MARGIN_X
-        boundary_margin_y = FACE_BOUNDARY_MARGIN_Y
-        sensitivity = FACE_BOUNDARY_SENSITIVITY
-
-        effective_margin_x = boundary_margin_x + sensitivity
-        effective_margin_y = boundary_margin_y + sensitivity
-
-        if (face_center_x < effective_margin_x or face_center_x > 1 - effective_margin_x or
-            face_center_y < effective_margin_y or face_center_y > 1 - effective_margin_y):
-            return False, face_landmarks, MESSAGES['face_out_of_bounds']
-        
-        return True, face_landmarks, ""
+        problem = face_position_problem(face_landmarks, frame.shape)
+        return not problem, face_landmarks, problem
     
     def _extract_iris_positions(self, landmarks, frame_shape: Tuple[int, int]) -> Dict[str, float]:
         """Extract normalized iris positions relative to face"""
@@ -347,10 +350,7 @@ class GazeCalibrator:
 
     def _draw_boundary_box(self, frame: np.ndarray, color: Tuple[int, int, int] = YELLOW):
         """Draw the fixed box the face should stay inside"""
-        h, w = frame.shape[:2]
-        margin_x = int(FACE_BOUNDARY_MARGIN_X * w)
-        margin_y = int(FACE_BOUNDARY_MARGIN_Y * h)
-        cv2.rectangle(frame, (margin_x, margin_y), (w-margin_x, h-margin_y), color, 2)
+        draw_face_box(frame, color)
 
     @contextmanager
     def training_preview(self):

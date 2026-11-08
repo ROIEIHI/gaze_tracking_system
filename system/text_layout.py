@@ -123,7 +123,7 @@ def build_reading_sequence() -> List[Dict]:
     """Turn EXPERIMENT into the steps of a session, one step per screen.
     Line and word numbers count through each text, page numbers through the whole session"""
     layout_instructions(OPENING_INSTRUCTIONS)  # Too long to fit stops the session here
-    sequence = [{'type': 'message', 'content': OPENING_TITLE, 'details': OPENING_INSTRUCTIONS}]
+    sequence = [{'type': 'message', 'content': OPENING_TITLE, 'details': OPENING_INSTRUCTIONS, 'check_position': True}]
     page_number = 0
 
     for text in EXPERIMENT:

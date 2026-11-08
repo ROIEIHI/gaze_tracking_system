@@ -7,7 +7,7 @@ The sections most often changed come first. Search for a number to jump there, f
      2. LAB SETUP              Screen size, viewing distance, camera
      3. TEXT DISPLAY           Font, rows, line spacing, margins
      4. GAZE ANALYSIS          Fixation, saccade and word matching limits
-     5. PARTICIPANT POSITION   Face box and face detection
+     5. PARTICIPANT POSITION   Face box, face detection, position check during reading
      6. CALIBRATION            Calibration dots, timing, training preview
      7. VIDEO RECORDING        What is recorded and how
      8. MODEL TRAINING         Data split, outliers, hyperparameters
@@ -95,6 +95,11 @@ MIN_FACE_SIZE = 100                 # Minimum face bounding box size in pixels
 FACE_STABILITY_THRESHOLD = 1.0      # Seconds to wait for stable face detection
 FACE_DETECTION_CONFIDENCE = 0.9     # MediaPipe detection confidence
 FACE_TRACKING_CONFIDENCE = 0.9      # MediaPipe tracking confidence
+
+# Position check during reading, using the face box above
+OOB_CHECK_ENABLED = True            # Pause reading when the face leaves the box, and hold the opening screen until it's inside
+OOB_PAUSE_AFTER_SECONDS = 2.0       # Seconds out of the box before reading pauses. Shorter drifts only leave a gap in the data
+OOB_RESUME_AFTER_SECONDS = 1.0      # Seconds steady inside the box before reading resumes
 
 # ============================================================================
 # 6. CALIBRATION
@@ -256,6 +261,9 @@ OPENING_INSTRUCTIONS = [            # One paragraph per line, long lines wrap on
     "אם התנוחה תשתנה, הקריאה תיעצר ויופיע מסך שיעזור לחזור למקום. הקריאה תמשיך מעצמה.",
     "קוראים בקצב הרגיל. בהצלחה!",
 ]
+
+# Shown while reading is paused because the face left the box
+REPOSITION_MESSAGE = "נא לחזור למרכז המסגרת. הקריאה תמשיך מעצמה"
 
 # Experiment script, in the order it is shown. Each text lists its steps from top to bottom:
 #   ("text", content)                 part of the text, the only step whose gaze goes to the CSV

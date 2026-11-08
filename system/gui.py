@@ -601,7 +601,10 @@ class GazeTrackingGUI:
                             f"attempt {final_attempt['attempt']})\n")
                 f.write(f"Reading Mode: {'Hebrew RTL' if RTL_READING_DIRECTION == 'rtl' else 'English LTR'}\n")
                 f.write(f"Screen Resolution: {SCREEN_WIDTH}×{SCREEN_HEIGHT}\n")
-                f.write(f"Text Font Size: {TEXT_FONT_SIZE}\n\n")
+                f.write(f"Text Font Size: {TEXT_FONT_SIZE}\n")
+                predictor = getattr(self, 'predictor', None)
+                events = predictor.position_events if predictor else []
+                f.write(f"Out of Position: {len(events)} times, reading paused {sum(e['Paused'] for e in events)} times\n\n")
                 f.write("Session completed successfully!\n")
                 
             self.update_status(f"Session data exported to: {self.session_dir}")
