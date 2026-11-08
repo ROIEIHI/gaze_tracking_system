@@ -19,7 +19,7 @@ from typing import Optional
 # Import all system modules
 from config import *
 from calibration import GazeCalibrator, pixels_to_degrees
-from text_layout import paginate_text
+from text_layout import build_reading_sequence
 from model_training import GazeModelTrainer
 from prediction import TextReadingGazePredictor
 from eye_movement_analyzer import EyeMovementAnalyzer
@@ -361,8 +361,7 @@ class GazeTrackingGUI:
             
         # A text setting that can't fit must stop the session here, not after calibration
         try:
-            for text in PAGES.values():
-                paginate_text(text)
+            build_reading_sequence()
         except ValueError as e:
             messagebox.showerror("Text Layout Error", str(e))
             return False

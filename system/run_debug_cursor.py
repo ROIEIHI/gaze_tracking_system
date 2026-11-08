@@ -59,8 +59,9 @@ class DebugGazePredictor(TextReadingGazePredictor):
                 pupil_size = 3.5 + np.sin(time.time()) * 0.1
                 blink_freq = 12.0
                 
-                # Call the actual data collection method
-                self._add_gaze_point_to_analysis(x, y, pupil_size, blink_freq)
+                # Call the actual data collection method, on text pages only like a real session
+                if self.reading_sequence[self.current_page]['type'] == 'page':
+                    self._add_gaze_point_to_analysis(x, y, pupil_size, blink_freq)
                 
                 # 4. Visual Feedback
                 # Draw cursor/gaze point

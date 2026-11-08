@@ -69,6 +69,41 @@ def paginate_text(text: str) -> List[List[List[str]]]:
     return [rows[i:i + TEXT_ROWS_PER_PAGE] for i in range(0, len(rows), TEXT_ROWS_PER_PAGE)]
 
 
+def build_reading_sequence() -> List[Dict]:
+    """Turn EXPERIMENT into the steps of a session, one step per screen.
+    Line and word numbers count through each text, page numbers through the whole session"""
+    sequence = []
+    page_number = 0
+
+    for text in EXPERIMENT:
+        part = 0
+        first_line = 1
+        first_word = 1
+        shared = {'text': text['number'], 'text_type': text['type']}
+
+        for kind, content, *correct_answer in text['steps']:
+            if kind == 'text':
+                part += 1
+                for rows in paginate_text(content):
+                    page_number += 1
+                    sequence.append({
+                        **shared, 'type': 'page', 'part': part, 'content': rows, 'page_number': page_number,
+                        'first_line': first_line, 'first_word': first_word
+                    })
+                    first_line += len(rows)
+                    first_word += sum(len(row) for row in rows)
+            elif kind in ('probe', 'rating'):
+                sequence.append({
+                    **shared, 'type': kind, 'part': part, 'content': content,
+                    'correct_answer': correct_answer[0] if correct_answer else None
+                })
+            else:
+                raise ValueError(f"Text {text['number']} has an unknown step type: {kind}")
+
+    sequence.append({'type': 'message', 'content': CLOSING_MESSAGE})
+    return sequence
+
+
 def render_page(rows: List[List[str]], page: int, first_line: int = 1, first_word: int = 1) -> Tuple[np.ndarray, List[Dict]]:
     """Draw one page of rows, returning the BGR image and the position of every word.
     Line and word numbers carry on from first_line and first_word, so they count through the whole passage"""

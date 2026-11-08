@@ -16,7 +16,7 @@ from config import *
 from eye_movement_analyzer import EyeMovementAnalyzer, GazePoint, MovementMetrics
 import pandas as pd
 from PIL import ImageDraw, Image
-from text_layout import load_text_font, paginate_text, render_page
+from text_layout import build_reading_sequence, load_text_font, render_page
 import os
 import re
 import threading
@@ -303,36 +303,12 @@ class TextReadingGazePredictor:
             return False
     
     def _create_reading_sequence(self):
-        """Create sequence of text pages and probes based on config"""
+        """Create the sequence of text pages, questions and the closing message from config"""
         print("Creating reading sequence from config...")
-        
-        self.reading_sequence = []
-        self.total_pages = 0
-        
-        for page_id in sorted(PAGES.keys()):
-            # Add Visual Pages to Sequence. Line and word numbers run through the whole passage
-            first_line = 1
-            first_word = 1
-            for rows in paginate_text(PAGES[page_id]):
-                self.reading_sequence.append({
-                    'type': 'page',
-                    'id': page_id,
-                    'content': rows,
-                    'first_line': first_line,
-                    'first_word': first_word
-                })
-                first_line += len(rows)
-                first_word += sum(len(row) for row in rows)
-                self.total_pages += 1
 
-            # Add Probe if exists for this page
-            if page_id in PROBES:
-                self.reading_sequence.append({
-                    'type': 'probe',
-                    'id': page_id,
-                    'content': PROBES[page_id]
-                })
-        
+        self.reading_sequence = build_reading_sequence()
+        self.total_pages = sum(1 for step in self.reading_sequence if step['type'] == 'page')
+
         print(f"Created sequence with {len(self.reading_sequence)} steps ({self.total_pages} visual pages)")
 
     def _render_text_page(self) -> np.ndarray:
@@ -347,24 +323,27 @@ class TextReadingGazePredictor:
             return self._render_probe(step, background)
 
         if self.cached_page != self.current_page:
-            self.page_image, self.word_positions = render_page(step['content'], self.current_page, step['first_line'], step['first_word'])
+            if step['type'] == 'page':
+                self.page_image, self.word_positions = render_page(step['content'], self.current_page, step['first_line'], step['first_word'])
+            else:
+                background = np.full((SCREEN_HEIGHT, SCREEN_WIDTH, 3), TEXT_BACKGROUND, dtype=np.uint8)
+                self.page_image = self._render_question(step, background)
+                self.word_positions = []
             self._draw_navigation_info(self.page_image)
             self.cached_page = self.current_page
 
         return self.page_image.copy()
 
-    def _render_probe(self, step, image):
-        """Render probe dialog"""
+    def _render_question(self, step, image):
+        """Draw a step's text centred on the question screen"""
         # Draw semi-transparent overlay
         overlay = image.copy()
         cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (240, 240, 240), -1)
         cv2.addWeighted(overlay, 0.9, image, 0.1, 0, image)
-        
+
         # Draw Question
         question_text = step['content']
-        # Draw Question
-        question_text = step['content']
-        image = self._render_hebrew_text(
+        return self._render_hebrew_text(
             question_text, 
             (SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.3)), 
             font_size=40, 
@@ -372,7 +351,11 @@ class TextReadingGazePredictor:
             background_image=image,
             centered=True # Center the text
         )
-        
+
+    def _render_probe(self, step, image):
+        """Render probe dialog"""
+        image = self._render_question(step, image)
+
         # Draw Yes/No Buttons
         button_y = int(SCREEN_HEIGHT * 0.6)
         button_width = 150
@@ -404,15 +387,15 @@ class TextReadingGazePredictor:
         # Handle Click
         if self.mouse_clicked:
             if yes_hover:
-                self.probe_answers[step['id']] = "Yes"
+                self.probe_answers[self.current_page] = "Yes"
                 self.current_page += 1
                 self.mouse_clicked = False
-                print(f"Probe {step['id']} Answered: Yes")
+                print(f"Text {step['text']} probe answered: Yes")
             elif no_hover:
-                self.probe_answers[step['id']] = "No"
+                self.probe_answers[self.current_page] = "No"
                 self.current_page += 1
                 self.mouse_clicked = False
-                print(f"Probe {step['id']} Answered: No")
+                print(f"Text {step['text']} probe answered: No")
             else:
                 self.mouse_clicked = False # Reset if clicked elsewhere
                 
@@ -499,27 +482,21 @@ class TextReadingGazePredictor:
                 return np.zeros((image_height, image_width, 3), dtype=np.uint8)
 
     def _draw_navigation_info(self, image):
-        """Draw page navigation and controls"""
-        # Calculate visual page number
+        """Draw the page number on text pages, and the controls on every screen"""
         current_step = self.reading_sequence[self.current_page]
-        if current_step['type'] == 'page':
-            # Count how many pages before this
-            visual_page_num = sum(1 for i in range(self.current_page + 1) if self.reading_sequence[i]['type'] == 'page')
-            total_visual_pages = sum(1 for s in self.reading_sequence if s['type'] == 'page')
-            page_info = f"Page {visual_page_num} of {total_visual_pages}"
-        else:
-            page_info = "Comprehension Check"
-            
+
         font = cv2.FONT_HERSHEY_SIMPLEX
         font_scale = 0.7
         thickness = 2
-        
-        text_size = cv2.getTextSize(page_info, font, font_scale, thickness)[0]
-        x = (SCREEN_WIDTH - text_size[0]) // 2
-        y = int(SCREEN_HEIGHT * 0.95)  # Adaptive positioning - 95% down the screen
-        
-        cv2.putText(image, page_info, (x, y), font, font_scale, (100, 100, 100), thickness)
-        
+
+        if current_step['type'] == 'page':
+            page_info = f"Page {current_step['page_number']} of {self.total_pages}"
+            text_size = cv2.getTextSize(page_info, font, font_scale, thickness)[0]
+            x = (SCREEN_WIDTH - text_size[0]) // 2
+            y = int(SCREEN_HEIGHT * 0.95)  # Adaptive positioning - 95% down the screen
+
+            cv2.putText(image, page_info, (x, y), font, font_scale, (100, 100, 100), thickness)
+
         # Controls
         controls = "ESC: Exit | A: Previous | D: Next | E: Export Data"
         text_size = cv2.getTextSize(controls, font, 0.5, 1)[0]
@@ -876,8 +853,45 @@ class TextReadingGazePredictor:
         # Return cleaned word if it has Hebrew characters, otherwise return "Unknown"
         return cleaned_word if cleaned_word else "Unknown"
     
+    def _answer_after_step(self, step_index):
+        """Answer to the first probe after a step, the one that closes that part of the text"""
+        for index in range(step_index + 1, len(self.reading_sequence)):
+            if self.reading_sequence[index]['type'] == 'probe':
+                return self.probe_answers.get(index, "N/A")
+        return "N/A"
+
+    def _export_probe_answers(self) -> str:
+        """Save every question with its answer. Ratings stay blank for the tester to fill in"""
+        rows = []
+        for index, step in enumerate(self.reading_sequence):
+            if step['type'] not in ('probe', 'rating'):
+                continue
+
+            answer = self.probe_answers.get(index, "N/A" if step['type'] == 'probe' else "")
+            correct_answer = step['correct_answer']
+            rows.append({
+                'Question_Order': len(rows) + 1,
+                'Text_Number': step['text'],
+                'Text_Type': step['text_type'],
+                'Part_Number': step['part'],
+                'Question_Type': step['type'],
+                'Question': step['content'],
+                'Answer': answer,
+                'Correct_Answer': correct_answer,
+                'Is_Correct': answer == correct_answer if correct_answer and answer != "N/A" else None
+            })
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        filepath = os.path.join(self.output_dir, f"probe_answers_{self.session_timestamp}.csv")
+        pd.DataFrame(rows).to_csv(filepath, index=False, encoding='utf-8-sig')
+        print(f"Probe answers saved to: {filepath}")
+        return filepath
+
     def _export_fixation_data(self) -> str:
         """Export fixation data in the same format as your CSV example"""
+        # Answers go first and don't depend on fixations, so a page with no gaze can't lose one
+        self._export_probe_answers()
+
         # print(f"DEBUG: Exporting fixation data. Total raw fixations: {len(self.fixation_data)}")
         if not self.fixation_data:
             print("No fixation data to export")
@@ -907,8 +921,8 @@ class TextReadingGazePredictor:
             #    continue
             
             # Get probe answer for this page
-            page_id = self.reading_sequence[data['page']]['id'] if data['page'] < len(self.reading_sequence) else 0
-            probe_ans = self.probe_answers.get(page_id, "N/A")
+            step = self.reading_sequence[data['page']]
+            probe_ans = self._answer_after_step(data['page'])
             
             if current_fixation is None:
                 current_fixation = {
@@ -917,7 +931,7 @@ class TextReadingGazePredictor:
                     'x_positions': [data['x']],
                     'y_positions': [data['y']],
                     'word': final_word,  # Use final_word (relaxed filtering)
-                    'page_id': page_id,
+                    'step': step,
                     'line': data['line'],
                     'word_index': data['word_index'],
                     'time_from_onset': data['time_from_onset'],
@@ -930,7 +944,7 @@ class TextReadingGazePredictor:
                 time_gap = data['timestamp'] - current_fixation['end_time']
                 
                 # Increased threshold to 0.5s to handle slower frame rates/processing
-                same_word = page_id == current_fixation['page_id'] and data['word_index'] == current_fixation['word_index']
+                same_word = step is current_fixation['step'] and data['word_index'] == current_fixation['word_index']
                 if time_gap < 0.5 and same_word:  # Same fixation
                     # print(f"DEBUG: Extending fixation for '{final_word}'")
                     current_fixation['end_time'] = data['timestamp']
@@ -960,7 +974,10 @@ class TextReadingGazePredictor:
 
                         processed_fixations.append({
                             'Fixation_Order': fixation_order,
-                            'Page_Number': current_fixation['page_id'],
+                            'Text_Number': current_fixation['step']['text'],
+                            'Text_Type': current_fixation['step']['text_type'],
+                            'Part_Number': current_fixation['step']['part'],
+                            'Page_Number': current_fixation['step']['page_number'],
                             'Line': current_fixation['line'],
                             'Word_Index': current_fixation['word_index'],
                             'Fixated_Word': current_fixation['word'],
@@ -981,7 +998,7 @@ class TextReadingGazePredictor:
                         'x_positions': [data['x']],
                         'y_positions': [data['y']],
                         'word': final_word,
-                        'page_id': page_id,
+                        'step': step,
                         'line': data['line'],
                         'word_index': data['word_index'],
                         'time_from_onset': data['time_from_onset'],
@@ -1006,7 +1023,10 @@ class TextReadingGazePredictor:
                 
                 processed_fixations.append({
                     'Fixation_Order': fixation_order,
-                    'Page_Number': current_fixation['page_id'],
+                    'Text_Number': current_fixation['step']['text'],
+                    'Text_Type': current_fixation['step']['text_type'],
+                    'Part_Number': current_fixation['step']['part'],
+                    'Page_Number': current_fixation['step']['page_number'],
                     'Line': current_fixation['line'],
                     'Word_Index': current_fixation['word_index'],
                     'Fixated_Word': current_fixation['word'],
@@ -1049,6 +1069,7 @@ class TextReadingGazePredictor:
         
         grouped_fixations = []
         current_word = None
+        group_start = None
         current_line = None
         current_index = None
         accumulated_duration = 0
@@ -1078,6 +1099,9 @@ class TextReadingGazePredictor:
                 if current_word is not None:
                     grouped_fixations.append({
                         'Fixation_Order': len(grouped_fixations) + 1,
+                        'Text_Number': group_start['Text_Number'],
+                        'Text_Type': group_start['Text_Type'],
+                        'Part_Number': group_start['Part_Number'],
                         'Page_Number': current_page,
                         'Line': current_line,
                         'Word_Index': current_index,
@@ -1093,6 +1117,7 @@ class TextReadingGazePredictor:
                 
                 # Start new word group
                 current_word = word
+                group_start = fixation
                 current_line = fixation['Line']
                 current_index = word_index
                 current_page = page
@@ -1108,6 +1133,9 @@ class TextReadingGazePredictor:
         if current_word is not None:
             grouped_fixations.append({
                 'Fixation_Order': len(grouped_fixations) + 1,
+                'Text_Number': group_start['Text_Number'],
+                'Text_Type': group_start['Text_Type'],
+                'Part_Number': group_start['Part_Number'],
                 'Page_Number': current_page,
                 'Line': current_line,
                 'Word_Index': current_index,
@@ -1167,7 +1195,8 @@ class TextReadingGazePredictor:
                 # Predict gaze point
                 prediction, pupil_size, blink_frequency = self._detect_face_and_predict(frame)
                 
-                # Create text display
+                # Create text display. A click on a probe moves on while it draws, so note the step on screen first
+                shown_step = self.reading_sequence[self.current_page]
                 text_display = self._render_text_page()
 
                 # The overlay recording always carries the gaze markers, whatever the participant sees
@@ -1187,8 +1216,7 @@ class TextReadingGazePredictor:
                     smoothed_y = int(self.smoothed_y)
                     
                     # Add to analysis ONLY if it's a page (not a probe)
-                    current_step = self.reading_sequence[self.current_page]
-                    if current_step['type'] == 'page':
+                    if shown_step['type'] == 'page':
                         # print(f"DEBUG: Adding gaze point ({smoothed_x}, {smoothed_y})")
                         self._add_gaze_point_to_analysis(smoothed_x, smoothed_y, pupil_size, blink_frequency)
                     else:
@@ -1223,8 +1251,8 @@ class TextReadingGazePredictor:
                         print(f"Moved to page {self.current_page + 1}")
                 elif key == ord('d') or key == ord('D'):  # Next page
                     if self.current_page < len(self.reading_sequence) - 1:
-                        # Only allow next if it's a page (probes require click)
-                        if self.reading_sequence[self.current_page]['type'] == 'page':
+                        # Probes require a click, every other step moves on with this key
+                        if self.reading_sequence[self.current_page]['type'] != 'probe':
                             self.current_page += 1
                             print(f"Moved to step {self.current_page + 1}")
                 elif key == ord('e') or key == ord('E'):  # Export data
