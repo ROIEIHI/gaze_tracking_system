@@ -174,10 +174,10 @@ def main():
     print("=" * 60)
     print()
     print("All dependencies have been installed successfully.")
-    print("You can now run the system using:")
+    print("Start the system with this same Python:")
     print()
-    print("  GUI Mode:         python gui.py")
-    print("  Command Line:     python main.py")
+    start_script = Path(__file__).parent / "start.py"
+    print(f'  "{sys.executable}" "{start_script}"')
     print()
     print("Project directories created:")
     print("  • user_data/        (for user sessions)")
