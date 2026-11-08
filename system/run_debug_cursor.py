@@ -44,7 +44,7 @@ class DebugGazePredictor(TextReadingGazePredictor):
         cv2.setWindowProperty(window_name, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
         cv2.setMouseCallback(window_name, self.mouse_callback)
         
-        self.session_start_time = time.time()
+        self.session_start_time = None  # Starts with the first gaze on a text page, like a real session
         
         try:
             while True:

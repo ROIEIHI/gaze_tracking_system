@@ -15,6 +15,12 @@ from config import *
 # Text has to end above the page number, which starts 93% down the screen
 TEXT_BOTTOM_LIMIT = 0.925
 
+# Opening screen instructions, centred under the title
+INSTRUCTIONS_TOP = 0.27             # First row, as a share of the screen height
+INSTRUCTIONS_BOTTOM_LIMIT = 0.85    # Last row must end above this, leaving room for the position status
+INSTRUCTIONS_ROW_HEIGHT = 1.6       # Row height, in multiples of the font size
+INSTRUCTIONS_PARAGRAPH_GAP = 0.6    # Extra space between paragraphs, in multiples of the font size
+
 
 def load_text_font(font_size: int) -> ImageFont.FreeTypeFont:
     """Load the first available font from TEXT_FONT_PATHS"""
@@ -45,6 +51,13 @@ def paginate_text(text: str) -> List[List[List[str]]]:
             f"end at y={text_bottom}, below the limit of y={int(SCREEN_HEIGHT * TEXT_BOTTOM_LIMIT)}"
         )
 
+    rows = _wrap_rows(text, font, max_width)
+    return [rows[i:i + TEXT_ROWS_PER_PAGE] for i in range(0, len(rows), TEXT_ROWS_PER_PAGE)]
+
+
+def _wrap_rows(text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[List[str]]:
+    """Fill rows word by word up to max_width pixels"""
+    space_width = font.getlength(" ")
     rows = []
     current_row = []
     current_width = 0
@@ -66,13 +79,51 @@ def paginate_text(text: str) -> List[List[List[str]]]:
     if current_row:
         rows.append(current_row)
 
-    return [rows[i:i + TEXT_ROWS_PER_PAGE] for i in range(0, len(rows), TEXT_ROWS_PER_PAGE)]
+    return rows
+
+
+def layout_instructions(paragraphs: List[str]) -> List[Tuple[str, int]]:
+    """Wrap the opening instructions into rows, returning each row's text and top y"""
+    font = load_text_font(INSTRUCTION_FONT_SIZE)
+    max_width = SCREEN_WIDTH - 2 * int(SCREEN_WIDTH * TEXT_MARGIN_X)
+    row_height = int(INSTRUCTION_FONT_SIZE * INSTRUCTIONS_ROW_HEIGHT)
+    y = int(SCREEN_HEIGHT * INSTRUCTIONS_TOP)
+    rows = []
+
+    for paragraph in paragraphs:
+        for row in _wrap_rows(paragraph, font, max_width):
+            rows.append((" ".join(row), y))
+            y += row_height
+        y += int(INSTRUCTION_FONT_SIZE * INSTRUCTIONS_PARAGRAPH_GAP)
+
+    ascent, descent = font.getmetrics()
+    bottom = rows[-1][1] + ascent + descent if rows else 0
+    if bottom > int(SCREEN_HEIGHT * INSTRUCTIONS_BOTTOM_LIMIT):
+        raise ValueError(
+            f"The opening instructions end at y={bottom}, below the limit of y={int(SCREEN_HEIGHT * INSTRUCTIONS_BOTTOM_LIMIT)}. "
+            f"Shorten them or lower INSTRUCTION_FONT_SIZE"
+        )
+    return rows
+
+
+def draw_instructions(image: np.ndarray, paragraphs: List[str]) -> np.ndarray:
+    """Draw the opening instructions centred on a BGR image"""
+    font = load_text_font(INSTRUCTION_FONT_SIZE)
+    pil_image = Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_image)
+
+    for text, y in layout_instructions(paragraphs):
+        display_text = to_display_order(text)
+        draw.text(((SCREEN_WIDTH - font.getlength(display_text)) / 2, y), display_text, font=font, fill=TEXT_COLOR)
+
+    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGB2BGR)
 
 
 def build_reading_sequence() -> List[Dict]:
     """Turn EXPERIMENT into the steps of a session, one step per screen.
     Line and word numbers count through each text, page numbers through the whole session"""
-    sequence = []
+    layout_instructions(OPENING_INSTRUCTIONS)  # Too long to fit stops the session here
+    sequence = [{'type': 'message', 'content': OPENING_TITLE, 'details': OPENING_INSTRUCTIONS}]
     page_number = 0
 
     for text in EXPERIMENT:

@@ -15,7 +15,7 @@ The sections most often changed come first. Search for a number to jump there, f
     10. FILE LOCATIONS         Where data is saved
     11. FACE AND EYE MODEL     Landmarks and features, do not change
     12. NOT IN USE             Settings no code reads, changing them has no effect
-    13. EXPERIMENT SCRIPT      Texts, questions and their order (end of this file)
+    13. EXPERIMENT SCRIPT      Opening screen, texts and questions, in the order shown
 """
 
 import os
@@ -63,6 +63,7 @@ TEXT_MARGIN_Y = 0.22                # Top margin (22% of the screen height), the
 # Appearance
 TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
 TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
+INSTRUCTION_FONT_SIZE = 28          # Font size of the instructions on the opening screen
 TEXT_FONT_PATHS = [                 # Hebrew fonts, the first one that loads is used
     "C:/Windows/Fonts/david.ttf",
     "C:/Windows/Fonts/tahoma.ttf",
@@ -244,6 +245,17 @@ CSV_COLUMNS = [
 # ============================================================================
 # 13. EXPERIMENT SCRIPT
 # ============================================================================
+
+# Opening screen, shown before the first text. The tester presses D to start reading
+OPENING_TITLE = "הכל מוכן, אפשר להתחיל"
+OPENING_INSTRUCTIONS = [            # One paragraph per line, long lines wrap on screen
+    "זהו מפגש לניתוח קריאה. יוצגו לך כמה טקסטים קצרים לקריאה.",
+    "יש לשבת בנוחות ולשמור על תנוחה יציבה, בלי לזוז הרבה עם הראש.",
+    "אחרי כל חלק בטקסט תופיע שאלה. עונים עליה בלחיצה על YES או NO.",
+    "בסוף כל טקסט יש לדרג עד כמה הבנת אותו, מ-1 עד 5, ולהראות את המספר באצבעות מול המצלמה.",
+    "אם התנוחה תשתנה, הקריאה תיעצר ויופיע מסך שיעזור לחזור למקום. הקריאה תמשיך מעצמה.",
+    "קוראים בקצב הרגיל. בהצלחה!",
+]
 
 # Experiment script, in the order it is shown. Each text lists its steps from top to bottom:
 #   ("text", content)                 part of the text, the only step whose gaze goes to the CSV

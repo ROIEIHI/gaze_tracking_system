@@ -16,7 +16,7 @@ from config import *
 from eye_movement_analyzer import EyeMovementAnalyzer, GazePoint, MovementMetrics
 import pandas as pd
 from PIL import ImageDraw, Image
-from text_layout import build_reading_sequence, load_text_font, render_page
+from text_layout import build_reading_sequence, draw_instructions, load_text_font, render_page
 import os
 import re
 import threading
@@ -341,16 +341,18 @@ class TextReadingGazePredictor:
         cv2.rectangle(overlay, (0, 0), (SCREEN_WIDTH, SCREEN_HEIGHT), (240, 240, 240), -1)
         cv2.addWeighted(overlay, 0.9, image, 0.1, 0, image)
 
-        # Draw Question
+        # Draw Question. A screen with instructions puts its title higher, with the instructions below
         question_text = step['content']
-        return self._render_hebrew_text(
+        details = step.get('details')
+        image = self._render_hebrew_text(
             question_text, 
-            (SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * 0.3)), 
+            (SCREEN_WIDTH // 2, int(SCREEN_HEIGHT * (0.12 if details else 0.3))),
             font_size=40, 
             color=(0, 0, 0), 
             background_image=image,
             centered=True # Center the text
         )
+        return draw_instructions(image, details) if details else image
 
     def _render_probe(self, step, image):
         """Render probe dialog"""
@@ -1178,7 +1180,8 @@ class TextReadingGazePredictor:
             self.recording_paths = self.video_recorder.start_recording()
             print("=" * 60)
         
-        self.session_start_time = time.time()
+        # The reading clock starts when the first text page appears, not on the opening screen
+        self.session_start_time = None
 
         try:
             while True:
@@ -1197,6 +1200,8 @@ class TextReadingGazePredictor:
                 
                 # Create text display. A click on a probe moves on while it draws, so note the step on screen first
                 shown_step = self.reading_sequence[self.current_page]
+                if self.session_start_time is None and shown_step['type'] == 'page':
+                    self.session_start_time = time.time()
                 text_display = self._render_text_page()
 
                 # The overlay recording always carries the gaze markers, whatever the participant sees
