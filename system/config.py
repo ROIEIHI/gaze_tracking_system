@@ -1,90 +1,206 @@
 """
 Configuration file for the Gaze Tracking Reading Analysis System
-Contains all system constants and settings
+
+The sections most often changed come first. Search for a number to jump there, for example "# 3."
+
+     1. SESSION OPTIONS        Gaze dot, accuracy check, video on or off
+     2. LAB SETUP              Screen size, viewing distance, camera
+     3. TEXT DISPLAY           Font, rows, line spacing, margins
+     4. GAZE ANALYSIS          Fixation, saccade and word matching limits
+     5. PARTICIPANT POSITION   Face box and face detection
+     6. CALIBRATION            Calibration dots, timing, training preview
+     7. VIDEO RECORDING        What is recorded and how
+     8. MODEL TRAINING         Data split, outliers, hyperparameters
+     9. COLORS AND MESSAGES    On-screen colors, font and instructions
+    10. FILE LOCATIONS         Where data is saved
+    11. FACE AND EYE MODEL     Landmarks and features, do not change
+    12. NOT IN USE             Settings no code reads, changing them has no effect
+    13. EXPERIMENT SCRIPT      Texts, questions and their order (end of this file)
 """
 
-import os 
+import os
 
 # ============================================================================
-# SYSTEM CONFIGURATION
+# 1. SESSION OPTIONS
 # ============================================================================
 
-# Screen and Display Settings
+SHOW_GAZE_POINT = False             # Show the live gaze point to the participant during reading (gaze is recorded either way)
+VIDEO_RECORDING_ENABLED = True      # Record the session videos, see section 7
+
+# Accuracy check after training
+ERROR_THRESHOLD_ENABLED = False     # Offer recalibration when the error is over the threshold (False ignores it, the error is still saved)
+ERROR_THRESHOLD_DEGREES = 2.5       # Maximum gaze error in degrees of visual angle
+
+# ============================================================================
+# 2. LAB SETUP
+# ============================================================================
+
+# Physical setup, used to convert the gaze error to degrees
+SCREEN_DIAGONAL_CM = 35.56          # Physical screen diagonal (14 inch)
+VIEWING_DISTANCE_CM = 40            # Eye-to-screen distance
+
+# Size of the image shown to the participant, stretched to fill the screen
 SCREEN_WIDTH = 1080
 SCREEN_HEIGHT = 720
-CAMERA_WIDTH = 640
-CAMERA_HEIGHT = 480
-CAMERA_INDEX = 0
 
-# File and Directory Settings (always inside this folder, wherever the program is launched from)
+# Camera
+CAMERA_INDEX = 0
+CAMERA_WIDTH = 640                  # Size requested from the camera, it may deliver a different one
+CAMERA_HEIGHT = 480
+
+# ============================================================================
+# 3. TEXT DISPLAY
+# ============================================================================
+
+# Layout. The program stops before calibration with a clear error if the text can't fit
+TEXT_ROWS_PER_PAGE = 4              # Number of text rows per page
+TEXT_FONT_SIZE = 40                 # Font size in points
+TEXT_LINE_SPACING = 120             # Spacing between lines in pixels
+TEXT_MARGIN_X = 0.1                 # Horizontal margin (10% from each edge)
+TEXT_MARGIN_Y = 0.22                # Top margin (22% of the screen height), the first row starts here on every page.
+                                    # 0.22 centres 4 rows at font 40 and spacing 120, adjust it if those change
+
+# Appearance
+TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
+TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
+TEXT_FONT_PATHS = [                 # Hebrew fonts, the first one that loads is used
+    "C:/Windows/Fonts/david.ttf",
+    "C:/Windows/Fonts/tahoma.ttf",
+    "C:/Windows/Fonts/arial.ttf",
+    "C:/Windows/Fonts/calibri.ttf"
+]
+
+RTL_READING_DIRECTION = "rtl"       # Direction for RTL text processing
+
+# ============================================================================
+# 4. GAZE ANALYSIS
+# ============================================================================
+
+FIXATION_THRESHOLD = 10             # Minimum duration (ms) to count as fixation
+SACCADE_VELOCITY_THRESHOLD = 200    # Minimum velocity (px/s) for saccade detection
+WORD_PROXIMITY_THRESHOLD = 100      # Maximum distance (px) to associate gaze with word
+
+# ============================================================================
+# 5. PARTICIPANT POSITION
+# ============================================================================
+
+# Face box shown during setup
+FACE_BOUNDARY_MARGIN_X = 0.35       # 35% margin from left/right edges
+FACE_BOUNDARY_MARGIN_Y = 0.2375     # 23.75% margin from top/bottom edges
+FACE_BOUNDARY_SENSITIVITY = 0.075   # Sensitivity for boundary warnings
+
+# Face detection
+MIN_FACE_SIZE = 100                 # Minimum face bounding box size in pixels
+FACE_STABILITY_THRESHOLD = 1.0      # Seconds to wait for stable face detection
+FACE_DETECTION_CONFIDENCE = 0.9     # MediaPipe detection confidence
+FACE_TRACKING_CONFIDENCE = 0.9      # MediaPipe tracking confidence
+
+# ============================================================================
+# 6. CALIBRATION
+# ============================================================================
+
+# Calibration process
+BASELINE_FRAMES = 30                # Frames for pitch/yaw baseline calculation
+CALIBRATION_FRAMES = 11             # Frames per calibration point
+
+# Calibration points
+CALIBRATION_GRID_SIZE = 4           # 4x4 grid = 16 points, added to the 21 fixed points
+CALIBRATION_POINT_SIZE = 20         # Radius of calibration points
+CALIBRATION_MARGIN_X = 150          # Grid distance from the left/right edges, in pixels
+CALIBRATION_MARGIN_Y = 200          # Grid distance from the top/bottom edges, in pixels
+ANIMATION_SHRINK_FRAMES = 10        # Frames for point shrinking animation
+
+# Training preview (self-view shown while the model trains)
+TRAINING_PREVIEW_FPS = 12           # Preview rate cap
+TRAINING_PREVIEW_CHECK_INTERVAL = 1.5   # Seconds between face position checks
+
+# ============================================================================
+# 7. VIDEO RECORDING (turned on or off in section 1)
+# ============================================================================
+
+RECORD_CAMERA_FEED = True           # Save the webcam video
+RECORD_OVERLAY_DISPLAY = True       # Save the screen video with the gaze markers
+VIDEO_FPS = 30                      # Playback rate of the saved videos
+VIDEO_CODEC = 'mp4v'                # MPEG-4 codec
+VIDEO_BUFFER_SIZE = 30              # Maximum frames waiting to be saved
+
+# ============================================================================
+# 8. MODEL TRAINING
+# Changing these changes the trained model, so sessions may stop being comparable
+# ============================================================================
+
+# Data processing
+TEST_SIZE = 0.2                     # 20% for testing
+RANDOM_STATE = 42
+NOISE_LEVEL = 5                     # Pixels of AGWN for training data
+
+# Outlier detection
+OUTLIER_METHOD = 'iqr'              # 'iqr' or 'zscore'
+IQR_MULTIPLIER = 1.5                # Multiplier for the interquartile range when using the IQR method
+ZSCORE_THRESHOLD = 3.0              # Threshold when using the z-score method
+
+# Hyperparameters for GridSearchCV
+XGB_PARAMS = {
+    'n_estimators': [300, 350, 400],
+    'max_depth': [2, 4, 8],
+    'learning_rate': [0.01, 0.05, 0.1],
+    'subsample': [0.7, 0.8, 1.0],
+    'colsample_bytree': [0.7, 0.8, 1.0]
+}
+CV_FOLDS = 3                        # Cross-validation folds
+
+# ============================================================================
+# 9. COLORS AND MESSAGES (setup and calibration screens)
+# ============================================================================
+
+# Colors (BGR format for OpenCV)
+RED = (0, 0, 255)
+GREEN = (100, 255, 100)
+BLUE = (255, 0, 0)
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+YELLOW = (0, 255, 255)
+
+# OpenCV font
+FONT_SCALE = 1.0
+FONT_THICKNESS = 1
+
+# Instructions shown on screen
+MESSAGES = {
+    'face_not_detected': "FACE NOT DETECTED - Please position your face in view",
+    'face_out_of_bounds': "FACE OUT OF BOUNDS - Please move closer to the camera",
+    'face_too_small': "FACE TOO SMALL - Please move closer to the camera",
+    'calibration_start': "CALIBRATION - Click on red points and keep gaze steady",
+    'baseline_instruction': "Look at the center point and click when ready",
+    'calibration_complete': "Calibration completed successfully!",
+    'model_training_start': "Training gaze prediction model...",
+    'model_training_complete': "Model training completed!",
+    'press_space': "Press SPACE to continue",
+    'press_esc': "Press ESC to exit"
+}
+
+# ============================================================================
+# 10. FILE LOCATIONS (always inside this folder, wherever the program is launched from)
+# ============================================================================
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DATA_DIR = os.path.join(BASE_DIR, "user_data")
 CALIBRATION_DATA_DIR = os.path.join(BASE_DIR, "calibration_data")  # Only used by main.py
 MODELS_DIR = os.path.join(BASE_DIR, "models")                      # Only used by main.py
 
 # ============================================================================
-# VIDEO RECORDING SETTINGS
+# 11. FACE AND EYE MODEL (do not change, trained models depend on these)
 # ============================================================================
 
-# Video Recording Configuration
-VIDEO_RECORDING_ENABLED = True
-VIDEO_FPS = 30
-VIDEO_CODEC = 'mp4v'  # H.264 compatible codec
-RECORD_CAMERA_FEED = True
-RECORD_OVERLAY_DISPLAY = True
-VIDEO_QUALITY = 80  # 0-100 quality setting
-VIDEO_BUFFER_SIZE = 30  # Maximum frames to buffer
-
-# ============================================================================
-# CALIBRATION SETTINGS
-# ============================================================================
-
-# Face Detection and Tracking
-FACE_BOUNDARY_MARGIN_X = 0.35  # 35% margin from left/right edges
-FACE_BOUNDARY_MARGIN_Y = 0.2375  # 23.75% margin from top/bottom edges
-FACE_STABILITY_THRESHOLD = 1.0  # seconds to wait for stable face detection
-FACE_BOUNDARY_SENSITIVITY = 0.075  # sensitivity for boundary warnings
-MIN_FACE_SIZE = 100  # minimum face bounding box size in pixels
-
-# MediaPipe Face Detection Confidence Settings
-FACE_DETECTION_CONFIDENCE = 0.9    # Detection confidence
-FACE_TRACKING_CONFIDENCE = 0.9     # Tracking confidence
-
-# Calibration Process
-BASELINE_FRAMES = 30  # frames for pitch/yaw baseline calculation
-CALIBRATION_FRAMES = 11  # frames per calibration point
-CALIBRATION_GRID_SIZE = 4  # 4x4 grid = 16 points
-CALIBRATION_POINT_SIZE = 20  # radius of calibration points
-CALIBRATION_MARGIN_X = 150  # pixels from screen edges
-CALIBRATION_MARGIN_Y = 200  # pixels from screen edges
-
-# Animation Settings
-ANIMATION_SHRINK_FRAMES = 10  # frames for point shrinking animation
-FADE_IN_FRAMES = 10  # frames for point fade in
-
-# Training Preview (self-view shown while the model trains)
-TRAINING_PREVIEW_FPS = 12  # preview rate cap
-TRAINING_PREVIEW_CHECK_INTERVAL = 1.5  # seconds between face position checks
-
-# Session Accuracy Check
-ERROR_THRESHOLD_ENABLED = False # Offer recalibration when the error is over the threshold (False ignores it, the error is still saved)
-ERROR_THRESHOLD_DEGREES = 2.5  # maximum gaze error in degrees of visual angle
-SCREEN_DIAGONAL_CM = 35.56  # physical screen diagonal (14 inch)
-VIEWING_DISTANCE_CM = 40  # eye-to-screen distance
-
-# ============================================================================
-# FEATURE EXTRACTION
-# ============================================================================
-
-# Feature Column Names (FIXED ORDER - DO NOT CHANGE)
+# Feature column names (FIXED ORDER - DO NOT CHANGE)
 FEATURE_COLUMNS = [
     'norm_L_x', 'norm_L_y',  # Left eye normalized iris position
-    'norm_R_x', 'norm_R_y',  # Right eye normalized iris position  
+    'norm_R_x', 'norm_R_y',  # Right eye normalized iris position
     'pitch', 'yaw',  # Head pose angles
     'tvect_x', 'tvect_y', 'tvect_z'  # Translation vectors
 ]
 
-# PnP Algorithm Settings
+# PnP algorithm settings
 PNP_3D_MODEL_POINTS = [
     (0.0, 0.0, 0.0),         # Nose tip
     (0.0, -330.0, -65.0),    # Chin
@@ -114,102 +230,20 @@ FACE_BOUNDARY_LANDMARKS = {
     'mouth_right': [291]
 }
 
-# ============================================================================
-# MODEL TRAINING SETTINGS
-# ============================================================================
-
-# Data Processing
-TEST_SIZE = 0.2  # 20% for testing
-RANDOM_STATE = 42
-NOISE_LEVEL = 5  # pixels of AGWN for training data
-
-# Model Hyperparameters for GridSearchCV
-RANDOM_FOREST_PARAMS = {
-    'n_estimators': [300, 350, 400],
-    'max_depth': [2, 4, 8, None],
-    'min_samples_split': [2, 3, 5],
-    'min_samples_leaf': [2, 3, 4],
-    'max_features': ['sqrt', 'log2']
-}
-
-XGB_PARAMS = {
-    'n_estimators': [300, 350, 400],
-    'max_depth': [2, 4, 8],
-    'learning_rate': [0.01, 0.05, 0.1],
-    'subsample': [0.7, 0.8, 1.0],
-    'colsample_bytree': [0.7, 0.8, 1.0]
-}
-
-# Cross-validation settings
-CV_FOLDS = 3
-
-SCORING_METRIC = 'neg_mean_squared_error'
-
-# ============================================================================
-# UI COLORS AND FONTS
-# ============================================================================
-
-# Colors (BGR format for OpenCV)
-RED = (0, 0, 255)
-GREEN = (100, 255, 100)
-BLUE = (255, 0, 0)
-WHITE = (255, 255, 255)
-BLACK = (0, 0, 0)
-YELLOW = (0, 255, 255)
-CYAN = (255, 255, 0)
-
-# Text settings
-FONT_SCALE = 1.0
-FONT_THICKNESS = 1
-TEXT_COLOR = WHITE
-ERROR_COLOR = RED
-SUCCESS_COLOR = GREEN
-
-# ============================================================================
-# SYSTEM MESSAGES
-# ============================================================================
-
-MESSAGES = {
-    'face_not_detected': "FACE NOT DETECTED - Please position your face in view",
-    'face_out_of_bounds': "FACE OUT OF BOUNDS - Please move closer to the camera",
-    'face_too_small': "FACE TOO SMALL - Please move closer to the camera",
-    'calibration_start': "CALIBRATION - Click on red points and keep gaze steady",
-    'baseline_instruction': "Look at the center point and click when ready",
-    'calibration_complete': "Calibration completed successfully!",
-    'model_training_start': "Training gaze prediction model...",
-    'model_training_complete': "Model training completed!",
-    'press_space': "Press SPACE to continue",
-    'press_esc': "Press ESC to exit"
-}
-
-# ============================================================================
-# OUTLIER DETECTION
-# ============================================================================
-
-OUTLIER_METHOD = 'iqr'  # 'iqr' or 'zscore'    # Method used for outlier detection
-IQR_MULTIPLIER = 1.5 # Multiplier for the interquartile range when using the IQR method for outlier detection
-ZSCORE_THRESHOLD = 3.0 # Threshold for the z-score method when using z-score for outlier detection
-
-# ============================================================================
-# EYE ANALYSIS AND READING SETTINGS
-# ============================================================================
-# Gaze Point Display
-SHOW_GAZE_POINT = False           # Show the live gaze point to the participant during reading (gaze is recorded either way)
-
-# Text Display Control
-TEXT_ROWS_PER_PAGE = 4             # Number of text rows per page
-TEXT_FONT_PATHS = [                 # Hebrew fonts, the first one that loads is used
-    "C:/Windows/Fonts/david.ttf",
-    "C:/Windows/Fonts/tahoma.ttf",
-    "C:/Windows/Fonts/arial.ttf",
-    "C:/Windows/Fonts/calibri.ttf"
+CSV_COLUMNS = [
+    "Fixation_Order",
+    "Fixated_Word",
+    "Fixation_X_Screen",
+    "Fixation_Y_Screen",
+    "Fixation_Duration",
+    "Time_from_Stimulus_Onset",
+    "Pupil_Size",
+    "Blink_Frequency"
 ]
-TEXT_FONT_SIZE = 40               # Font size in points
-TEXT_COLOR = (0, 0, 0)              # Text color (R, G, B) - Black
-TEXT_BACKGROUND = (255, 255, 255)   # Background color (R, G, B) - White
-TEXT_LINE_SPACING = 120              # Spacing between lines in pixels
-TEXT_MARGIN_X = 0.1                # Horizontal margin (10% from each edge)
-TEXT_MARGIN_Y = 0.22               # Top margin (22% of the screen height), the first row starts here on every page
+
+# ============================================================================
+# 13. EXPERIMENT SCRIPT
+# ============================================================================
 
 # Experiment script, in the order it is shown. Each text lists its steps from top to bottom:
 #   ("text", content)                 part of the text, the only step whose gaze goes to the CSV
@@ -285,32 +319,23 @@ EXPERIMENT = [
 
 CLOSING_MESSAGE = "תודה על ההשתתפות!"  # Shown after the last text, ESC ends the session
 
-# Eye Movement Analysis Settings
-FIXATION_THRESHOLD = 10              # Minimum duration (ms) to count as fixation
-SACCADE_VELOCITY_THRESHOLD = 200    # Minimum velocity (px/s) for saccade detection
-WORD_PROXIMITY_THRESHOLD = 100       # Maximum distance (px) to associate gaze with word
-ANALYSIS_EXPORT_FORMAT = "detailed"  # "detailed" or "simple"
-
-# CSV Export Settings
-CSV_COLUMNS = [
-    "Fixation_Order",
-    "Fixated_Word", 
-    "Fixation_X_Screen",
-    "Fixation_Y_Screen",
-    "Fixation_Duration",
-    "Time_from_Stimulus_Onset",
-    "Pupil_Size",
-    "Blink_Frequency"
-]
 
 # ============================================================================
-# HEBREW TEXT SUPPORT
+# 12. LEGACY SETTINGS
 # ============================================================================
 
-# Hebrew/RTL text settings
+VIDEO_QUALITY = 80                  # 0-100 quality setting
+FADE_IN_FRAMES = 10                 # Frames for point fade in
+ANALYSIS_EXPORT_FORMAT = "detailed" # "detailed" or "simple"
+SCORING_METRIC = 'neg_mean_squared_error'
+CYAN = (255, 255, 0)
+ERROR_COLOR = RED
+SUCCESS_COLOR = GREEN
 
-
-
-# RTL (Right-to-Left) Text Configuration
-RTL_READING_DIRECTION = "rtl"  # Direction for RTL text processing
-
+RANDOM_FOREST_PARAMS = {
+    'n_estimators': [300, 350, 400],
+    'max_depth': [2, 4, 8, None],
+    'min_samples_split': [2, 3, 5],
+    'min_samples_leaf': [2, 3, 4],
+    'max_features': ['sqrt', 'log2']
+}
